@@ -1,10 +1,14 @@
-from django.db import connection, transaction, DatabaseError
-from xformmanager.tests.util import *
-from xformmanager.models import Metadata, MetaDataValidationError
-from xformmanager.manager import XFormManager, FormDefError
+from datetime import datetime, timedelta
+from django.conf import settings
+from django.db import connection
+from domain.models import Domain
 from receiver.models import Submission, Attachment, SubmissionHandlingOccurrence
+from xformmanager.manager import XFormManager
+from xformmanager.models import Metadata, FormDefModel
+from xformmanager.tests.util import clear_data, create_xsd_and_populate, \
+    populate
+import logging
 import unittest
-from datetime import datetime, timedelta 
 
 class MetaTestCase(unittest.TestCase):
     
