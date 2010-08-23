@@ -21,4 +21,5 @@ projects/templates/
 	for each project, there needs to be templates unique to managing the templates for the main content portions.
 	within the confines of the application you're working in, you can make templates local and relative to the application you create.
 	
+
 	 
