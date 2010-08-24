@@ -3,7 +3,7 @@ from django.db import models
 
 
 class IntelGrameenSafeMotherhoodFollowup(models.Model):
-    form_id = models.BigIntegerField()
+    form_id = models.IntegerField()
     # id = models.IntegerField()
     meta_deviceid = models.CharField(max_length=765, blank=True)
     meta_timestart = models.DateTimeField(null=True, blank=True)
@@ -76,7 +76,7 @@ class IntelGrameenSafeMotherhoodFollowup(models.Model):
 
 
 class IntelGrameenMotherRegistration(models.Model):
-    form_id = models.BigIntegerField()
+    form_id = models.IntegerField()
     # id = models.IntegerField()
     meta_deviceid = models.CharField(max_length=765, blank=True)
     meta_timestart = models.DateTimeField(null=True, blank=True)
