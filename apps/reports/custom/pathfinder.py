@@ -348,7 +348,8 @@ class WardSummaryData(object):
 
         
         #add ward, district, region for this chw
-        puis = PhoneUserInfo.objects.all()
+        # puis = PhoneUserInfo.objects.all()
+        puis = PhoneUserInfo.objects.filter(phone__domain__name="pathfinder")
         userinfo = None
         if puis != None:
             for pui in puis:
@@ -370,7 +371,7 @@ class WardSummaryData(object):
         # go through all of this chw's clients
         if data_map != None:
             for client_id, client_data in data_map.items():
-                # use form_type?
+                # use form_type?                
                 [reg_forms, followup_forms, ref_forms] = [client_data[form] for 
                                                           form in 
                                                           case.form_identifiers]
@@ -597,7 +598,7 @@ class ProviderSummaryData(object):
         self.client_data = client_data
         self.startdate = startdate
         self.enddate = enddate
-        # use form_type? 
+        # use form_type?
         [reg_forms, followup_forms, ref_forms] = [client_data[form] for form 
                                                   in case.form_identifiers]
         for reg in reg_forms:
