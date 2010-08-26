@@ -1,0 +1,78 @@
+{% extends base_template %}
+{% load i18n %}
+{% block title %}Reports for {{user.selected_domain}}{% endblock %}
+
+{% block page_stylesheets %}
+    <link type="text/css" rel="stylesheet" href="/static/reports/stylesheets/style.css" />
+{% endblock %}
+
+{% block content %}
+
+<h3>PATH SUPERVISOR REPORT</h3>
+
+{% for i in fac %}
+
+	<p>
+		<h4>Health facility registration details</h4>
+		<ul>
+			<li><b>Name of health facility</b> {# #}</li>
+			<li><b>Name of supervisor</b> {# #}</li>
+			<li><b>Type of ownership</b> {# #}</li>
+		</ul>
+	</p>
+
+	<p>
+		<h4>Staff details</h4>
+		<ul>
+			<li><b>Name of the person in charge of health facility</b> {{ i.path_person_in_charge }}</li>
+			<li><b>Name of contact person at TB, TB/HIV Clinic</b> {# #}</li>
+			<li><b>Type of services rendered at the health facility</b> {# #}</li>
+			<li><b>Number of staffs providing TB, TB/HIV services</b> {{ i.path_number_of_staff }}</li>
+			<li><b>Training status of the staffs offering the TB, TB/HIV services</b> {# #}</li>
+		</ul>
+	</p>
+
+	<p>
+		<h4>TB clinic</h4>
+		<ul>
+			<li><b>Total number of case notifications over the last month</b> {# #}</li>
+			<li><b>Number of patients tested HIV for the last month</b> {{ i.path_tb_clinic_tested_hiv }}</li>
+			<li><b>Number tested HIV positive</b> {{ i.path_tb_clinic_hiv_positive }}</li>
+			<li><b>Number who have started CPT</b> {{ i.path_tb_clinic_cpt_started }}</li>
+			<li><b>Compliance of the patient treatment cards and the TB unit register</b> {# #}</li>
+		</ul>
+	</p>
+
+	<p>
+		<h4>CTC</h4>
+		<ul>
+			<li><b>Number of clients screened for TB </b> {{ i.path_ctc_hiv_screened_for_tb }}</li>
+			<li><b>Number of patients referred to TB clinic</b> {{ i.path_ctc_hiv_referred_for_tb }}</li>
+		</ul>
+	</p>
+
+	<p>
+		<h4>Laboratory</h4>
+		<ul>
+			<li><b>Number of specimen collected</b> {{ i.path_lab_number_of_specimen }}</li>
+			<li><b>Number of smear positive</b> {{ i.path_lab_number_of_smears_positive }}</li>
+			<li><b>Status of microscope in diagnostic centers</b> {{ i.path_lab_microscope_status }}</li>
+			<li><b>Adequacy of lab supplies</b> {{ i.path_lab_lab_supplies_level }}</li>
+			<li><b>Compliance of laboratory register and with unit register</b> {{ i.path_lab_updated_register }}</li>
+		</ul>
+	</p>
+
+	<p>
+		<h4>Pharmacy</h4>
+		<ul>
+			<li><b>Adequacy of stalk of anti TB drugs</b> {# #}<b>, HIV Test kits</b> {{ i.path_hiv_testkits }}<b>, Condoms</b> {{ i.path_condoms}} <b>CPT</b> {# #}</li>
+			<li><b>Other observations and comments from the field</b> {{ i.path_staff_other_comments }}</li>
+		</ul>
+	</p>
+ 	
+	<hr>
+	
+{% endfor %}
+
+{% endblock %}
+
