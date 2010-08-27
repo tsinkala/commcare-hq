@@ -9,7 +9,8 @@
 			border-width: 0px; 
 		}
 		th { 
-			background-color: #f6d959; width: 100%;
+			background-color: #F7F499;
+			width: 100%;
 		}
 		.oddrow {
 			background-color:#f8f8f8;
@@ -25,73 +26,81 @@ $(function(){
 });
 </script>
 
-
-<h1 style="text-align: center">PATH TANZANIA &nbsp; &nbsp; &nbsp; <img src="/static/reports/path_logo.png" style="vertical-align:text-bottom"/></h1>
+<div style="text-align: center;">
+	<h1>
+		PATH TANZANIA &nbsp; &nbsp; &nbsp; 
+		<img src="/static/reports/path_logo.png" />
+	</h1>
+</div>
 <br />
-{% for i in fac %}
-	
-	<h3 style="text-align: center">COMMCARE MONTHLY SUPERVISORY REPORTING</h3>
+<h3 style="text-align: center">COMMCARE MONTHLY SUPERVISORY REPORTING</h3>
 
-	<h4 style="text-align: center">Supervision Date: {{ i.path_supervision_date|date:"d M Y" }}</h4>
+<h4 style="text-align: center">Supervision Date: {{ i.path_supervision_date|date:"d M Y" }}</h4>
 
-	<br />
+<br />
 
-	<p>
-		<h4>Health facility registration details</h4>
-		<ul>
-			<li><b>Name of health facility</b> {{ i.facility }}</li>
-			<li><b>Facility code</b> {{ i.facility_id }}</li>
-			<li><b>Type of ownership</b> {{ i.ownership }}</li>
-			<li><b>District</b> {{ i.district }}</li>
-			<li><b>Region</b> {{ i.region }}</li>
-			<li><b>Name of supervisor</b> {{ i.meta_username }}</li>
-			
+<p>
+	<h4>Health facility registration details</h4>
+	<ul>
+		<li><b>Name of health facility</b> {{ i.facility }}</li>
+		<li><b>Facility code</b> {{ i.facility_id }}</li>
+		<li><b>Type of ownership</b> {{ i.ownership }}</li>
+		<li><b>District</b> {{ i.district }}</li>
+		<li><b>Region</b> {{ i.region }}</li>
+		<li><b>Name of supervisor</b> {{ i.meta_username }}</li>
+	</ul>
+</p>
 
-		</ul>
-	</p>
+<p>
+	<table id='report'>
+		<tr><th colspan="2">Staff details</th></tr>
+		<tr><td>Name of the person in charge of health facility</td> <td>{{ i.path_person_in_charge }}</td></tr>
+		<tr><td>Type of services rendered at the health facility</td> <td>{{ i.path_tb_hiv_service }}</td></tr>
+		<tr><td>Number of staffs providing TB, TB/HIV services</td> <td>{{ i.path_number_of_staff }}</td></tr>
+		<tr>
+			<td>Training status of the staffs offering the TB, TB/HIV services</td> 
+			<td>
+				{% for p in profiles %}
+					<b>{{ p.staff_title }}</b> 
+					{{ p.lab_specialty|default_if_none:"" }}
+					{{ p.training|default_if_none:"" }}
+					{{ p.other_training|default_if_none:"" }}<br />
+				{% endfor %}
+			</td>
+		</tr>
 
-	<p>
-		<table id='report'>
-			<tr><th colspan="2">Staff details</th></tr>
-			<tr><td>Name of the person in charge of health facility</td> <td>{{ i.path_person_in_charge }}</td></tr>
-			<tr><td>Type of services rendered at the health facility</td> <td>{{ i.path_tb_hiv_service }}</td></tr>
-			<tr><td>Number of staffs providing TB, TB/HIV services</td> <td>{{ i.path_number_of_staff }}</td></tr>
-			<tr><td>Training status of the staffs offering the TB, TB/HIV services</td> <td>{{ i.path_staff_profile }}</td></tr>
+		<tr><th colspan="2">TB clinic</tr>		
+		<tr><td>Total number of case notifications over the last month</td> <td>{{ i.path_tb_clinic_patient_count }}</td></tr>
+		<tr><td>Number of patients tested HIV for the last month</td> <td>{{ i.path_tb_clinic_tested_hiv }}</td></tr>
+		<tr><td>Number tested HIV positive</td> <td>{{ i.path_tb_clinic_hiv_positive }}</td></tr>
+		<tr><td>Number who have started CPT</td> <td>{{ i.path_tb_clinic_cpt_started }}</td></tr>
+		<tr><td>Compliance of the patient treatment cards and the TB unit register</td> <td>{{ path_tb_clinic_matching_records_unit_register }}</td></tr>
 
-			<tr><th colspan="2">TB clinic</tr>		
-			<tr><td>Total number of case notifications over the last month</td> <td>{{ i.path_tb_clinic_patient_count }}</td></tr>
-			<tr><td>Number of patients tested HIV for the last month</td> <td>{{ i.path_tb_clinic_tested_hiv }}</td></tr>
-			<tr><td>Number tested HIV positive</td> <td>{{ i.path_tb_clinic_hiv_positive }}</td></tr>
-			<tr><td>Number who have started CPT</td> <td>{{ i.path_tb_clinic_cpt_started }}</td></tr>
-			<tr><td>Compliance of the patient treatment cards and the TB unit register</td> <td>{{ path_tb_clinic_matching_records_unit_register }}</td></tr>
+		<tr><th colspan="2">CTC</tr>
+		<tr><td>Number of clients screened for TB </td> <td>{{ i.path_ctc_hiv_screened_for_tb }}</td></tr>
+		<tr><td>Number of patients referred to TB clinic</td> <td>{{ i.path_ctc_hiv_referred_for_tb }}</td></tr>
 
-			<tr><th colspan="2">CTC</tr>
-			<tr><td>Number of clients screened for TB </td> <td>{{ i.path_ctc_hiv_screened_for_tb }}</td></tr>
-			<tr><td>Number of patients referred to TB clinic</td> <td>{{ i.path_ctc_hiv_referred_for_tb }}</td></tr>
+		<tr><th colspan="2">Laboratory</tr>
+		<tr><td>Number of specimen collected</td> <td>{{ i.path_lab_number_of_specimen }}</td></tr>
+		<tr><td>Number of smear positive</td> <td>{{ i.path_lab_number_of_smears_positive }}</td></tr>
+		<tr><td>Status of microscope in diagnostic centers</td> <td>{{ i.path_lab_microscope_status }}</td></tr>
+		<tr><td>Adequacy of lab supplies</td> <td>{{ i.path_lab_lab_supplies_level }}</td></tr>
+		<tr><td>Compliance of laboratory register and with unit register</td> <td>{{ i.path_lab_updated_register }}</td></tr>
 
-			<tr><th colspan="2">Laboratory</tr>
-			<tr><td>Number of specimen collected</td> <td>{{ i.path_lab_number_of_specimen }}</td></tr>
-			<tr><td>Number of smear positive</td> <td>{{ i.path_lab_number_of_smears_positive }}</td></tr>
-			<tr><td>Status of microscope in diagnostic centers</td> <td>{{ i.path_lab_microscope_status }}</td></tr>
-			<tr><td>Adequacy of lab supplies</td> <td>{{ i.path_lab_lab_supplies_level }}</td></tr>
-			<tr><td>Compliance of laboratory register and with unit register</td> <td>{{ i.path_lab_updated_register }}</td></tr>
-
-			<tr><th colspan="2">Pharmacy</tr>
-			<tr><td colspan="2">
-				Adequacy of stock of anti TB drugs <b>{{ i.path_pharmacy_store_stock_position }}</b>
-				, HIV Test kits <b>{{ i.path_hiv_testkits }}</b>
-				, Condoms <b>{{ i.path_condoms }}</b>
-			</td></tr>
-			<tr><td colspan="2">
-				<b>Other observations and comments from the field</b>
-					<blockquote>{{ i.path_staff_other_comments }}</blockquote>
-			</td></tr>
-		</table>
-	</p>
+		<tr><th colspan="2">Pharmacy</tr>
+		<tr><td colspan="2">
+			Adequacy of stock of anti TB drugs <b>{{ i.path_pharmacy_store_stock_position }}</b>
+			, HIV Test kits <b>{{ i.path_hiv_testkits }}</b>
+			, Condoms <b>{{ i.path_condoms }}</b>
+		</td></tr>
+		<tr><td colspan="2">
+			<b>Other observations and comments from the field</b>
+				<blockquote>{{ i.path_staff_other_comments }}</blockquote>
+		</td></tr>
+	</table>
+</p>
  	
-	<hr>
-
-{% endfor %}
+<hr>
 
 {% endblock %}
 
