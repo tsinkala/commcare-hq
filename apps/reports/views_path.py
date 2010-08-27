@@ -4,7 +4,7 @@ from django.http import HttpResponse, HttpResponseRedirect, HttpResponseForbidde
 from domain.decorators import login_and_domain_required, require_domain
 from rapidsms.webui.utils import render_to_response, UnicodeWriter
 
-from reports.schemas import SchemaPathPathChwFacilityregistration2 as Facility
+# from reports.schemas import SchemaPathPathChwFacilityregistration2 as Facility
 
 from reports.schemas import SchemaPathPathChwSupervisionchecklist2 as Checklist
 
