@@ -66,6 +66,22 @@ class SchemaBracAOfficeHouseholdSurveyDodProblemDeath3(models.Model):
     class Meta:
         db_table = u'schema_brac_a_office_household_survey_dod_problem_death_3'
 
+class SchemaBracAOfficeHouseholdSurveyDodProblemDeath4(models.Model):
+    id = models.IntegerField(primary_key=True)
+    death_name = models.CharField(max_length=765, blank=True)
+    death_gender = models.CharField(max_length=765, blank=True)
+    death_under_2_years = models.CharField(max_length=765, blank=True)
+    death_nu_months = models.IntegerField(null=True, blank=True)
+    death_nu_years = models.IntegerField(null=True, blank=True)
+    death_tb = models.CharField(max_length=765, blank=True)
+    death_ctc = models.CharField(max_length=765, blank=True)
+    death_high_fever = models.CharField(max_length=765, blank=True)
+    death_go_h_facility = models.CharField(max_length=765, blank=True)
+    death_preg_complications = models.CharField(max_length=765, blank=True)
+    parent_id = models.IntegerField(null=True, blank=True)
+    class Meta:
+        db_table = u'schema_brac_a_office_household_survey_dod_problem_death_4'
+
 class SchemaBracBracCcResolution002(models.Model):
     id = models.IntegerField(primary_key=True)
     meta_formname = models.CharField(max_length=765, blank=True)
@@ -2622,6 +2638,50 @@ class SchemaBracDodomaOfficeHouseholdSurvey3(models.Model):
     class Meta:
         db_table = u'schema_brac_dodoma_office_household_survey_3'
 
+class SchemaBracDodomaOfficeHouseholdSurvey4(models.Model):
+    id = models.IntegerField(primary_key=True)
+    meta_commcareversion = models.CharField(max_length=765, blank=True)
+    meta_deviceid = models.CharField(max_length=765, blank=True)
+    meta_timestart = models.DateTimeField(null=True, blank=True)
+    meta_timeend = models.DateTimeField(null=True, blank=True)
+    meta_username = models.CharField(max_length=765, blank=True)
+    dod_meta_chw_id = models.CharField(max_length=765, blank=True)
+    meta_uid = models.CharField(max_length=765, blank=True)
+    dod_survey_id = models.IntegerField(null=True, blank=True)
+    dod_survey_order = models.CharField(max_length=765, blank=True)
+    dod_want_to_know_family_planning = models.CharField(max_length=765, blank=True)
+    dod_referral = models.CharField(max_length=765, blank=True)
+    dod_referral_given_sickness = models.IntegerField(null=True, blank=True)
+    dod_referral_given_pregnancy_case = models.IntegerField(null=True, blank=True)
+    dod_referral_given_wound_case = models.IntegerField(null=True, blank=True)
+    dod_referral_given_birth_registration = models.IntegerField(null=True, blank=True)
+    dod_num_ppl = models.IntegerField(null=True, blank=True)
+    dod_family_planning = models.CharField(max_length=765, blank=True)
+    dod_fp_method = models.CharField(max_length=765, blank=True)
+    dod_sick = models.CharField(max_length=765, blank=True)
+    dod_sick_count = models.IntegerField(null=True, blank=True)
+    dod_toilet = models.CharField(max_length=765, blank=True)
+    dod_how_many_mosquito_nets = models.IntegerField(null=True, blank=True)
+    dod_mosquito_nets = models.CharField(max_length=765, blank=True)
+    dod_treated_mosquito_nets_long_time_treatment = models.IntegerField(null=True, blank=True)
+    dod_treated_mosquito_nets_short_time_treatment = models.IntegerField(null=True, blank=True)
+    dod_treated_mosquito_nets_no_treatment = models.IntegerField(null=True, blank=True)
+    dod_advice_for_mosquito_nets = models.CharField(max_length=765, blank=True)
+    dod_place_get_water = models.CharField(max_length=765, blank=True)
+    dod_pregnant = models.CharField(max_length=765, blank=True)
+    dod_under2 = models.CharField(max_length=765, blank=True)
+    dod_under2_count = models.IntegerField(null=True, blank=True)
+    dod_under2_review_all = models.CharField(max_length=765, blank=True)
+    dod_under2_finished_vac = models.CharField(max_length=765, blank=True)
+    dod_under2_encourage_clinic = models.CharField(max_length=765, blank=True)
+    dod_new_born = models.CharField(max_length=765, blank=True)
+    dod_num_of_baby = models.IntegerField(null=True, blank=True)
+    dod_death = models.CharField(max_length=765, blank=True)
+    dod_num_of_death = models.IntegerField(null=True, blank=True)
+    parent_id = models.IntegerField(null=True, blank=True)
+    class Meta:
+        db_table = u'schema_brac_dodoma_office_household_survey_4'
+
 class SchemaBracDomaFieldNurseHomevisitBracSickPerson2(models.Model):
     id = models.IntegerField(primary_key=True)
     sick_illness = models.CharField(max_length=765, blank=True)
@@ -2653,6 +2713,15 @@ class SchemaBracDomaOfficeHouseholdSurveyDodNewBabies3(models.Model):
     parent_id = models.IntegerField(null=True, blank=True)
     class Meta:
         db_table = u'schema_brac_doma_office_household_survey_dod_new_babies_3'
+
+class SchemaBracDomaOfficeHouseholdSurveyDodNewBabies4(models.Model):
+    id = models.IntegerField(primary_key=True)
+    new_born_birth_place = models.CharField(max_length=765, blank=True)
+    new_born_who_was_present = models.CharField(max_length=765, blank=True)
+    age_mother_of_new_born = models.IntegerField(null=True, blank=True)
+    parent_id = models.IntegerField(null=True, blank=True)
+    class Meta:
+        db_table = u'schema_brac_doma_office_household_survey_dod_new_babies_4'
 
 class SchemaBracMaFieldNurseHomevisitBracProblemDeath2(models.Model):
     id = models.IntegerField(primary_key=True)
@@ -2729,6 +2798,20 @@ class SchemaBracOmaOfficeHouseholdSurveyDodSickPerson3(models.Model):
     parent_id = models.IntegerField(null=True, blank=True)
     class Meta:
         db_table = u'schema_brac_oma_office_household_survey_dod_sick_person_3'
+
+class SchemaBracOmaOfficeHouseholdSurveyDodSickPerson4(models.Model):
+    id = models.IntegerField(primary_key=True)
+    sick_illness = models.CharField(max_length=765, blank=True)
+    sick_facility = models.CharField(max_length=765, blank=True)
+    sick_when = models.DateField(null=True, blank=True)
+    sick_meds = models.CharField(max_length=765, blank=True)
+    sick_finish = models.CharField(max_length=765, blank=True)
+    sick_goagain = models.CharField(max_length=765, blank=True)
+    sick_finish_dose = models.CharField(max_length=765, blank=True)
+    sick_go_hc = models.CharField(max_length=765, blank=True)
+    parent_id = models.IntegerField(null=True, blank=True)
+    class Meta:
+        db_table = u'schema_brac_oma_office_household_survey_dod_sick_person_4'
 
 class SchemaBracSafeMotherhoodCloseV02(models.Model):
     id = models.IntegerField(primary_key=True)
