@@ -22,5 +22,5 @@ urlpatterns = patterns('',
     (r'^reports/(?P<case_id>\d+)/single/(?P<case_instance_id>.*)/?$', 'reports.views.single_case_view'),
     
     (r'^reports/path/supervisor/(?P<checklist_id>\d+)/?$', 'reports.views_path.supervisor'),
-    
+    (r'^reports/path/facilities/?$', 'reports.views_path.facilities'),
 )
