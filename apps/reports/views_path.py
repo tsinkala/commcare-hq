@@ -5,16 +5,15 @@ from django.shortcuts import get_object_or_404
 from domain.decorators import login_and_domain_required, require_domain
 from rapidsms.webui.utils import render_to_response, UnicodeWriter
 
-# from reports.schemas import SchemaPathPathChwFacilityregistration2 as Facility
-
 from reports.schemas import SchemaPathPathChwSupervisionchecklist2 as Checklist
-from reports.schemas import SchemaPathChwSupervisionchecklistPathStaffProfile2 as StaffProfile
 from reports.schemas import SchemaPathPathChwFacilityregistration2 as Facility
+from reports.schemas import SchemaPathChwSupervisionchecklistPathStaffProfile2 as StaffProfile
 
 
 @require_domain('path')
 def supervisor(request, checklist_id):
     ''' display supervisor report for a single facility '''
+    
     checklist = get_object_or_404(Checklist, pk=checklist_id)
     facility = get_object_or_404(Facility, path_case_case_id=checklist.path_case_case_id)
     profiles = StaffProfile.objects.filter(parent_id=checklist.id)
@@ -37,8 +36,7 @@ def facilities(request):
     for f in Facility.objects.all():
         if checklists.has_key(f.path_case_case_id):
             f.checklist = checklists[f.path_case_case_id]
-            # to display all facilites (inc those w/ no report) move this out of the if block
-            facilities.append(f)
+            facilities.append(f) # <- move out of the if block to display all facilites (inc. those w/o report) 
 
     return render_to_response(request, "custom/path/facilities.html", { "facilities": facilities })
     
