@@ -2,8 +2,6 @@
 # vim: ai ts=4 sts=4 et sw=4 encoding=utf-8
 
 import os, time
-import i18n
-
 
 DEBUG = True
 TEMPLATE_DEBUG = DEBUG
@@ -20,7 +18,7 @@ TIME_ZONE = time.tzname[0]
 
 # Language code for this installation. All choices can be found here:
 # http://www.i18nguy.com/unicode/language-identifiers.html
-LANGUAGE_CODE = 'sw'
+LANGUAGE_CODE = 'en-us'
 
 SITE_ID = 1
 
@@ -38,7 +36,7 @@ MEDIA_ROOT = ''
 # URL that handles the media served from MEDIA_ROOT. Make sure to use a
 # trailing slash if there is a path component (optional in other cases).
 # Examples: "http://media.lawrence.com", "http://example.com/media/"
-MEDIA_URL = ''
+MEDIA_URL = '/static'
 
 # URL prefix for admin media -- CSS, JavaScript and images. Make sure to use a
 # trailing slash.
@@ -60,9 +58,10 @@ MIDDLEWARE_CLASSES = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.locale.LocaleMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'corehq.apps.domain.middleware.DomainMiddleware',
 ]
 
-ROOT_URLCONF = "rapidsms.webui.urls"
+ROOT_URLCONF = "urls"
 
 TEMPLATE_CONTEXT_PROCESSORS = [
     "django.core.context_processors.auth",
@@ -70,7 +69,7 @@ TEMPLATE_CONTEXT_PROCESSORS = [
     "django.core.context_processors.i18n",
     "django.core.context_processors.media",
     "django.core.context_processors.request",
-    "webapp.context_processors.base_template" # sticks the base template inside all responses
+    "corehq.util.context_processors.base_template" # sticks the base template inside all responses
 ]
 
 TEMPLATE_DIRS = [
@@ -79,152 +78,123 @@ TEMPLATE_DIRS = [
     # Don't forget to use absolute paths, not relative paths.
 ]
 
-# this is the template that is used as the base for all
-# rapidsms pages.  if you want to totally restyle your pages
-# you should change this in your configuration .ini file
 BASE_TEMPLATE = "layout.html"
-# This is a similar concept, but for templating the login
-# and logout screens 
-LOGIN_TEMPLATE = "webapp/login.html"
-LOGGEDOUT_TEMPLATE = "webapp/loggedout.html"
-
-
-
-# ====================
-# LOAD RAPIDSMS CONFIG
-# ====================
-
-# this module will usually be called up via the django
-# reloader, which is (in turn) called up by rapidsms's
-# server.py, which adds RAPIDSMS_INI to the environment.
-# just in case, though, check that it's defined rather
-# than repeating the filename selection logic here
-if not "RAPIDSMS_INI" in os.environ:
-    raise(
-        EnvironmentError,
-        "The RAPIDSMS_INI environment variable is not "  +\
-        "defined. Without it, settings.py doesn't know " +\
-        "which ini file to load settings from")
-
-# load the rapidsms configuration
-from rapidsms import Config
-RAPIDSMS_CONF = Config(os.environ["RAPIDSMS_INI"])
-
-# since iterating and reading the config of apps is
-# common, build a handy dict of apps and their configs
-RAPIDSMS_APPS = dict([
-    (app["type"], app)
-    for app in RAPIDSMS_CONF["rapidsms"]["apps"]])
-
-
-# this code bootstraps the i18n logic configuration, if 
-# it is in the settings
-
-def _i18n_to_django_setting(language_settings):
-    languages = []
-    for language in language_settings:
-        if len(language) >= 2:
-            languages.append( (language[0],language[1]) )
-    return tuple(languages)
-    
-# Import i18n settings from rapidsms.ini for sms
-if "i18n" in RAPIDSMS_CONF:
-    RAPIDSMS_I18N = True
-    if "web_languages" in RAPIDSMS_CONF["i18n"]:
-        LANGUAGES = _i18n_to_django_setting( RAPIDSMS_CONF["i18n"]["web_languages"] )
-    elif "languages" in RAPIDSMS_CONF["i18n"]:
-        LANGUAGES = _i18n_to_django_setting( RAPIDSMS_CONF["i18n"]["languages"] )
-    
-    # allow you to specify the static paths for translation files
-    if "locale_paths" in RAPIDSMS_CONF["i18n"]:
-        LOCALE_PATHS = RAPIDSMS_CONF["i18n"]["locale_paths"]
-
-# DATABASE SETTINGS
-# 'This sets the default storage engine upon connecting to the database. 
-# After your tables have been created, you should remove this option.'
-# (from http://docs.djangoproject.com/en/dev/ref/databases/)
-# (this solution is only for testing - the correct way to make sure
-# that the engine is innodb going forward is to configure my.conf appropriately)
-# 
-# DATABASE_OPTIONS = {
-#    "init_command": "SET storage_engine=INNODB",
-# }
-
-# ==========================
-# LOAD OTHER DJANGO SETTINGS
-# ==========================
-
-# load the database settings first, since those
-# keys don't correspond exactly to their eventual
-# name in this module (they're missing the prefix
-# in rapidsms.ini); inject them into this module
-if "database" in RAPIDSMS_CONF:
-    for key, val in RAPIDSMS_CONF["database"].items():
-        vars()["DATABASE_%s" % key.upper()] = val
-
-else:
-    # database settings are missing, so
-    # blow up. TODO: is there a way to
-    # run django without a database?
-    raise(
-        "Your RapidSMS configuration does not contain " +\
-        "a [database] section, which is required " +\
-        "for the Django WebUI to function.")
-
-# if there is a "django" section, inject
-# the items as CONSTANTS in this module
-if "django" in RAPIDSMS_CONF:
-    for key, val in RAPIDSMS_CONF["django"].items():
-        vars()[key.upper()] = val
-
-
-
+LOGIN_TEMPLATE="login_and_password/login.html"
+LOGGEDOUT_TEMPLATE="loggedout.html"
 
 # ====================
 # INJECT RAPIDSMS APPS
 # ====================
-
-INSTALLED_APPS = [
+DEFAULT_APPS = (
+    'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.sites',
-    'django.contrib.admin',
-    'django.contrib.admindocs',
-    'django.contrib.markup'
-] + [app["module"] for app in RAPIDSMS_APPS.values()]
+    
+)
 
-# ====================
-# INJECT RAPIDSMS MIDDLEWARES IF PRESENT
-# ====================
+HQ_APPS = (
+    'corehq.lib.django_granular_permissions',
+    'corehq.lib.django_rest_interface',
+    'corehq.lib.django_tables',
+    'corehq.lib.django_digest',
+    'corehq.lib.django_user_registration',
+    'corehq.apps.domain',
+    'corehq.apps.docs',
+    # pull in anton's fixes to make logtracker work on hq's
+    #'corehq.apps.logtracker',
+    'corehq.apps.releasemanager',
+    'corehq.apps.requestlogger',
+    'corehq.apps.receiver',
+    'corehq.apps.hqwebapp',
+    'corehq.apps.program',
+    'corehq.apps.phone',
+    # lame: xforms needs to be run last
+    # because it resets xmlrouter, which breaks functionality in
+    # other code which is dependent on xmlrouter's global initialization
+    'corehq.apps.xforms',
+    'reports',
+    'graphing',
+    'ota_restore'
+)
+
+INSTALLED_APPS = DEFAULT_APPS + HQ_APPS
 
 
-if "customdjango" in RAPIDSMS_CONF:
-    if "middlewares" in RAPIDSMS_CONF["customdjango"]:
-        middlewares = RAPIDSMS_CONF["customdjango"]["middlewares"]
-        if isinstance(middlewares, basestring):
-            middlewares = [middlewares]
-            RAPIDSMS_CONF["customdjango"]["middlewares"] = middlewares
-        MIDDLEWARE_CLASSES = MIDDLEWARE_CLASSES +\
-                          [middleware for middleware in middlewares]
-    if "authentications" in RAPIDSMS_CONF["customdjango"]:
-        auths = RAPIDSMS_CONF["customdjango"]["authentications"]
-        if isinstance(auths, basestring):
-            auths = [auths]
-            RAPIDSMS_CONF["customdjango"]["authentications"] = auths
-        AUTHENTICATION_BACKENDS = ['django.contrib.auth.backends.ModelBackend'] +\
-                          [backend for backend in auths]
-    if "context_processors" in RAPIDSMS_CONF["customdjango"]:
-        procs = RAPIDSMS_CONF["customdjango"]["context_processors"]
-        if isinstance(procs, basestring):
-            procs = [procs]
-        TEMPLATE_CONTEXT_PROCESSORS = TEMPLATE_CONTEXT_PROCESSORS +\
-                          [proc for proc in procs]
+# after login, django redirects to this URL
+# rather than the default 'accounts/profile'
+LOGIN_REDIRECT_URL='/'
 
-CUSTOM_MANAGERS = {}
-if "managers" in RAPIDSMS_CONF:
-    for model_class, method in RAPIDSMS_CONF["managers"].items():
-        CUSTOM_MANAGERS[model_class] = method
+
+####### Receiver Settings #######
+RECEIVER_SUBMISSION_PATH="data/submissions"
+RECEIVER_ATTACHMENT_PATH="data/attachments"
+RECEIVER_EXPORT_PATH="data"
+
+####### XFormManager Settings #######
+XFORMS_SCHEMA_PATH="data/schemas"
+XFORMS_EXPORT_PATH="data"
+XFORMS_FORM_TRANSLATE_JAR="corehq/lib/form_translate.jar"
+
+####### Domain settings  #######
+
+DOMAIN_MAX_REGISTRATION_REQUESTS_PER_DAY=99
+DOMAIN_SELECT_URL="/domain/select/"
+LOGIN_URL="/accounts/login/"
+# For the registration app
+# One week to confirm a registered user account
+ACCOUNT_ACTIVATION_DAYS=7 
+# If a user tries to access domain admin pages but isn't a domain 
+# administrator, here's where he/she is redirected
+DOMAIN_NOT_ADMIN_REDIRECT_PAGE_NAME="homepage"
+
+####### Release Manager App settings  #######
+RELEASE_FILE_PATH=os.path.join("data","builds")
+
+####### Photo App settings  #######
+PHOTO_IMAGE_PATH=os.path.join("data","photos")
+
+
+####### Shared/Global/UI Settings ######
+
+# restyle some templates
+BASE_TEMPLATE="hq-layout.html"
+LOGIN_TEMPLATE="login_and_password/login.html"
+LOGGEDOUT_TEMPLATE="loggedout.html"
+
+
+
+# email settings: these ones are the custom hq ones
+EMAIL_LOGIN="notifications@dimagi.com"
+EMAIL_PASSWORD="alpha321"
+EMAIL_SMTP_HOST="smtp.gmail.com"
+EMAIL_SMTP_PORT=587
+
+# these are the official django settings
+# which really we should be using over the
+# above
+EMAIL_HOST = "smtp.gmail.com"
+EMAIL_PORT = 587
+EMAIL_HOST_USER = "notifications@dimagi.com"
+EMAIL_HOST_PASSWORD = "alpha321"
+EMAIL_USE_TLS = True
+
+
+TABS = [
+    ('corehq.apps.hqwebapp.views.dashboard', 'Dashboard'),
+    ('graphing.views.domain_charts', 'Charts'),
+    ('reports.views.reports', 'Reports'),
+    ('releasemanager.views.projects', 'Release Manager'),
+    ('corehq.apps.xforms.views.dashboard', 'XForms'),
+    ('corehq.apps.receiver.views.show_submits', 'Submissions'),
+]
+
+# import local settings if we find them
+try:
+    from localsettings import *
+except ImportError:
+    pass
 
 # create data directories required by commcarehq
 import os
