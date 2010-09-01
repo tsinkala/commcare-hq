@@ -39,28 +39,21 @@ $(function(){
 		<th style="width: 75%"><b>Facility Name</b> (<tt>#ID</tt>)</th>
 		<th>Supervisor Report Date</th>
 	</tr>
-	{% for f in facilities %}
+
+	{% for case_id, f in facilities.items %}
 	<tr>
 		<td><b>{{ f.path_case_create_case_name }}</b> (<tt>#{{ f.path_facility_id }}</tt>)</td>
 		<td> 
+			&nbsp;
 			{% if f.checklist %}
-				<a href="{% url reports.views_path.supervisor f.checklist.id %}">
-					Supervisor Report {{ f.checklist.path_supervision_date|date:"d M Y" }}
+				<a href="{% url reports.views_path.facility f.checklist.id %}">
+					{{ f.checklist.path_supervision_date|date:"d M Y" }}
 				</a>
-			{% else %}
-				&nbsp;
 			{% endif %}
 		</td>
 	</tr>			
 	{% endfor %}
-		<!-- <li><b>Facility code</b> {{ facility.path_facility_id }}</li>
-		<li><b>Type of ownership</b> {{ facility.path_case_update_ownership }}</li>
-		<li><b>District</b> {{ facility.path_case_update_district }}</li>
-		<li><b>Region</b> {{ facility.path_case_update_region }}</li>
-		<li><b>Name of supervisor</b> {{ i.meta_username }}</li> -->
-		
-		
-	<tr>
+
 </table>
 {% endblock %}
 
