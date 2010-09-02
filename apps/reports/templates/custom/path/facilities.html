@@ -1,0 +1,60 @@
+{% extends base_template %}
+{% load i18n %}
+{% block title %}Reports for {{user.selected_domain}}{% endblock %}
+
+{% block page_stylesheets %}
+    <link type="text/css" rel="stylesheet" href="/static/reports/stylesheets/style.css" />
+	<style>
+		table { 
+			border-width: 0px; 
+		}
+		th { 
+			background-color: #F7F499;
+			width: 100%;
+		}
+		.oddrow {
+			background-color:#f8f8f8;
+		}
+	</style>
+{% endblock %}
+
+{% block content %}
+
+<script type="text/javascript">
+$(function(){
+  $("table#report tr:even").addClass("oddrow");
+});
+</script>
+
+<div style="text-align: center;">
+	<h1>
+		PATH TANZANIA &nbsp; &nbsp; &nbsp; 
+		<img src="/static/reports/path_logo.png" />
+	</h1>
+</div>
+<br />
+
+<table id="report">
+	<tr>
+		<th style="width: 75%"><b>Facility Name</b> (<tt>#ID</tt>)</th>
+		<th>Supervisor Report Date</th>
+	</tr>
+
+	{% for case_id, f in facilities.items %}
+	<tr>
+		<td><b>{{ f.path_case_create_case_name }}</b> (<tt>#{{ f.path_facility_id }}</tt>)</td>
+		<td> 
+			&nbsp;
+			{% if f.checklist %}
+				<a href="{% url reports.views_path.facility f.checklist.id %}">
+					{{ f.checklist.path_supervision_date|date:"d M Y" }}
+				</a>
+			{% endif %}
+		</td>
+	</tr>			
+	{% endfor %}
+
+</table>
+{% endblock %}
+
+
