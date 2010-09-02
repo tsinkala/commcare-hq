@@ -98,7 +98,6 @@ HQ_APPS = (
     'corehq.lib.django_granular_permissions',
     'corehq.lib.django_rest_interface',
     'corehq.lib.django_tables',
-    'corehq.lib.django_digest',
     'corehq.lib.django_user_registration',
     'corehq.apps.domain',
     'corehq.apps.docs',
@@ -114,7 +113,6 @@ HQ_APPS = (
     # because it resets xmlrouter, which breaks functionality in
     # other code which is dependent on xmlrouter's global initialization
     'corehq.apps.xforms',
-    'reports',
     'graphing',
     'ota_restore'
 )
@@ -126,16 +124,6 @@ INSTALLED_APPS = DEFAULT_APPS + HQ_APPS
 # rather than the default 'accounts/profile'
 LOGIN_REDIRECT_URL='/'
 
-
-####### Receiver Settings #######
-RECEIVER_SUBMISSION_PATH="data/submissions"
-RECEIVER_ATTACHMENT_PATH="data/attachments"
-RECEIVER_EXPORT_PATH="data"
-
-####### XFormManager Settings #######
-XFORMS_SCHEMA_PATH="data/schemas"
-XFORMS_EXPORT_PATH="data"
-XFORMS_FORM_TRANSLATE_JAR="corehq/lib/form_translate.jar"
 
 ####### Domain settings  #######
 
@@ -183,11 +171,10 @@ EMAIL_USE_TLS = True
 
 TABS = [
     ('corehq.apps.hqwebapp.views.dashboard', 'Dashboard'),
-    ('graphing.views.domain_charts', 'Charts'),
-    ('reports.views.reports', 'Reports'),
-    ('releasemanager.views.projects', 'Release Manager'),
-    ('corehq.apps.xforms.views.dashboard', 'XForms'),
+    ('corehq.apps.releasemanager.views.projects', 'Release Manager'),
     ('corehq.apps.receiver.views.show_submits', 'Submissions'),
+    ('corehq.apps.xforms.views.dashboard', 'XForms'),
+    ('graphing.views.domain_charts', 'Charts'),
 ]
 
 # import local settings if we find them
@@ -207,3 +194,32 @@ if not os.path.isdir(os.path.join(root,'data','attachments')):
     os.mkdir(os.path.join(root,'data','attachments'))
 if not os.path.isdir(os.path.join(root,'data','schemas')):
     os.mkdir(os.path.join(root,'data','schemas'))
+
+
+# FEEL FREE TO PUT THIS IN YOUR LOCALSETTINGS.PY
+DATABASE_ENGINE = 'mysql'           # 'postgresql_psycopg2', 'postgresql', 'mysql', 'sqlite3' or 'oracle'.
+DATABASE_NAME = 'commcarehq'       # Or path to database file if using sqlite3.
+DATABASE_USER = 'root'     # Not used with sqlite3.
+DATABASE_PASSWORD = 'password'         # Not used with sqlite3.
+DATABASE_HOST = ''             # Set to empty string for localhost. Not used with sqlite3.
+DATABASE_PORT = ''             # Set to empty string for default. Not used with sqlite3.
+
+DJANGO_LOG_FILE = "/var/log/commcarehq/commcarehq.django.log"
+LOG_SIZE = 1000000
+LOG_LEVEL   = "ERROR"
+LOG_FILE    = "/var/log/commcarehq/commcarehq.log"
+LOG_FORMAT  = "[%(name)s]: %(message)s"
+LOG_BACKUPS = 256 # number of logs to keep
+
+
+####### Receiver Settings #######
+ROOT_DATA_PATH = "data"
+RECEIVER_SUBMISSION_PATH=ROOT_DATA_PATH + "/submissions"
+RECEIVER_ATTACHMENT_PATH=ROOT_DATA_PATH + "/attachments"
+RECEIVER_EXPORT_PATH=ROOT_DATA_PATH
+
+####### XFormManager Settings #######
+XFORMS_SCHEMA_PATH=ROOT_DATA_PATH + "/schemas"
+XFORMS_EXPORT_PATH=ROOT_DATA_PATH
+XFORMS_FORM_TRANSLATE_JAR="corehq/lib/form_translate.jar"
+
