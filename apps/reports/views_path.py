@@ -5,11 +5,16 @@ from django.shortcuts import get_object_or_404
 from domain.decorators import login_and_domain_required, require_domain
 from rapidsms.webui.utils import render_to_response, UnicodeWriter
 
-from reports.schemas import SchemaPathPathChwSupervisionchecklist2 as Checklist
-from reports.schemas import SchemaPathPathChwFacilityregistration2 as Facility
-from reports.schemas import SchemaPathChwSupervisionchecklistPathStaffProfile2 as StaffProfile
-from reports.schemas import SchemaPathPathChwClosefacility2 as CloseFacility
+try:
+    from reports.schemas import SchemaPathPathChwSupervisionchecklist2 as Checklist
+    from reports.schemas import SchemaPathPathChwFacilityregistration2 as Facility
+    from reports.schemas import SchemaPathChwSupervisionchecklistPathStaffProfile2 as StaffProfile
+    from reports.schemas import SchemaPathPathChwClosefacility2 as CloseFacility
+except ImportError:
+    from sys import exit
+    exit()
 
+    
 @require_domain('path')
 def facility(request, checklist_id):
     ''' display supervisor report for a single facility '''
