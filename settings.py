@@ -177,8 +177,14 @@ TABS = [
     ('graphing.views.domain_charts', 'Charts'),
 ]
 
+
 # import local settings if we find them
 try:
+    #try to see if there's an environmental variable set for local_settings
+    import sys, os
+    if os.environ.has_key('LOCALSETTINGS'):
+        localpath = os.path.dirname(os.environ['LOCALSETTINGS'])
+        sys.path.insert(0, localpath)
     from localsettings import *
 except ImportError:
     pass
