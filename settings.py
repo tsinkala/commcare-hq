@@ -95,10 +95,10 @@ DEFAULT_APPS = (
 )
 
 HQ_APPS = (
-    'corehq.lib.django_granular_permissions',
-    'corehq.lib.django_rest_interface',
-    'corehq.lib.django_tables',
-    'corehq.lib.django_user_registration',
+    'django_granular_permissions',
+    'django_rest_interface',
+    'django_tables',
+    'django_user_registration',
     'corehq.apps.domain',
     'corehq.apps.docs',
     # pull in anton's fixes to make logtracker work on hq's
@@ -196,21 +196,12 @@ if not os.path.isdir(os.path.join(root,'data','schemas')):
     os.mkdir(os.path.join(root,'data','schemas'))
 
 
-# FEEL FREE TO PUT THIS IN YOUR LOCALSETTINGS.PY
-DATABASE_ENGINE = 'mysql'           # 'postgresql_psycopg2', 'postgresql', 'mysql', 'sqlite3' or 'oracle'.
-DATABASE_NAME = 'commcarehq'       # Or path to database file if using sqlite3.
-DATABASE_USER = 'root'     # Not used with sqlite3.
-DATABASE_PASSWORD = 'password'         # Not used with sqlite3.
-DATABASE_HOST = ''             # Set to empty string for localhost. Not used with sqlite3.
-DATABASE_PORT = ''             # Set to empty string for default. Not used with sqlite3.
-
 DJANGO_LOG_FILE = "/var/log/commcarehq/commcarehq.django.log"
 LOG_SIZE = 1000000
 LOG_LEVEL   = "ERROR"
 LOG_FILE    = "/var/log/commcarehq/commcarehq.log"
 LOG_FORMAT  = "[%(name)s]: %(message)s"
 LOG_BACKUPS = 256 # number of logs to keep
-
 
 ####### Receiver Settings #######
 ROOT_DATA_PATH = "data"
@@ -221,5 +212,5 @@ RECEIVER_EXPORT_PATH=ROOT_DATA_PATH
 ####### XFormManager Settings #######
 XFORMS_SCHEMA_PATH=ROOT_DATA_PATH + "/schemas"
 XFORMS_EXPORT_PATH=ROOT_DATA_PATH
-XFORMS_FORM_TRANSLATE_JAR="corehq/lib/form_translate.jar"
+XFORMS_FORM_TRANSLATE_JAR="submodules/core-hq-src/lib/form_translate.jar"
 
