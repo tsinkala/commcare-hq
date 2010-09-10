@@ -112,7 +112,6 @@ HQ_APPS = (
     'corehq.apps.releasemanager',
     'corehq.apps.requestlogger',
     'corehq.apps.docs',
-    'graphing',
     'ota_restore',
 )
 
@@ -221,4 +220,8 @@ RECEIVER_EXPORT_PATH=ROOT_DATA_PATH
 XFORMS_SCHEMA_PATH=ROOT_DATA_PATH + "/schemas"
 XFORMS_EXPORT_PATH=ROOT_DATA_PATH
 XFORMS_FORM_TRANSLATE_JAR="submodules/core-hq-src/lib/form_translate.jar"
+
+####### South Settings #######
+#SKIP_SOUTH_TESTS=True
+#SOUTH_TESTS_MIGRATE=False
 
