@@ -91,30 +91,29 @@ DEFAULT_APPS = (
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.sites',
-    
+    'south',
 )
 
 HQ_APPS = (
-    'django_granular_permissions',
     'django_rest_interface',
+    'django_granular_permissions',
     'django_tables',
     'django_user_registration',
     'corehq.apps.domain',
-    'corehq.apps.docs',
-    # pull in anton's fixes to make logtracker work on hq's
-    #'corehq.apps.logtracker',
-    'corehq.apps.releasemanager',
-    'corehq.apps.requestlogger',
     'corehq.apps.receiver',
     'corehq.apps.hqwebapp',
     'corehq.apps.program',
     'corehq.apps.phone',
+    'corehq.apps.logtracker',
     # lame: xforms needs to be run last
     # because it resets xmlrouter, which breaks functionality in
     # other code which is dependent on xmlrouter's global initialization
     'corehq.apps.xforms',
+    'corehq.apps.releasemanager',
+    'corehq.apps.requestlogger',
+    'corehq.apps.docs',
     'graphing',
-    'ota_restore'
+    'ota_restore',
 )
 
 INSTALLED_APPS = DEFAULT_APPS + HQ_APPS
@@ -151,7 +150,10 @@ BASE_TEMPLATE="hq-layout.html"
 LOGIN_TEMPLATE="login_and_password/login.html"
 LOGGEDOUT_TEMPLATE="loggedout.html"
 
-
+#logtracker settings variables
+LOGTRACKER_ALERT_EMAILS = []
+LOGTRACKER_LOG_THRESHOLD = 30
+LOGTRACKER_ALERT_THRESHOLD = 40
 
 # email settings: these ones are the custom hq ones
 EMAIL_LOGIN="notifications@dimagi.com"
