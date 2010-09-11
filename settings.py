@@ -116,7 +116,27 @@ HQ_APPS = (
     'ota_restore',
 )
 
-INSTALLED_APPS = DEFAULT_APPS + HQ_APPS
+RAPIDSMS_APPS = (
+    # RapidSMS Core
+    # 'djtables',
+    'rapidsms',
+
+    # Common Dependencies
+    "rapidsms.contrib.handlers",
+    "rapidsms.contrib.ajax",
+
+    # RapidSMS Apps
+    'rapidsms.contrib.messagelog',
+    'rapidsms.contrib.messaging',
+    
+    # For Testing
+    'rapidsms.contrib.httptester',
+
+    # TODO: customize these and then add them
+    # 'default',
+)
+
+INSTALLED_APPS = DEFAULT_APPS + HQ_APPS + RAPIDSMS_APPS
 
 
 # after login, django redirects to this URL
@@ -176,7 +196,6 @@ TABS = [
     ('corehq.apps.releasemanager.views.projects', 'Release Manager'),
     ('corehq.apps.receiver.views.show_submits', 'Submissions'),
     ('corehq.apps.xforms.views.dashboard', 'XForms'),
-    ('graphing.views.domain_charts', 'Charts'),
 ]
 
 
@@ -204,10 +223,10 @@ if not os.path.isdir(os.path.join(root,'data','schemas')):
     os.mkdir(os.path.join(root,'data','schemas'))
 
 
-DJANGO_LOG_FILE = "/var/log/commcarehq/commcarehq.django.log"
+DJANGO_LOG_FILE = "/var/log/commcarehq.django.log"
 LOG_SIZE = 1000000
-LOG_LEVEL   = "ERROR"
-LOG_FILE    = "/var/log/commcarehq/commcarehq.log"
+LOG_LEVEL   = "DEBUG"
+LOG_FILE    = "/var/log/commcarehq.router.log"
 LOG_FORMAT  = "[%(name)s]: %(message)s"
 LOG_BACKUPS = 256 # number of logs to keep
 
@@ -226,3 +245,26 @@ XFORMS_FORM_TRANSLATE_JAR="submodules/core-hq-src/lib/form_translate.jar"
 #SKIP_SOUTH_TESTS=True
 #SOUTH_TESTS_MIGRATE=False
 
+####### RapidSMS Settings #######
+INSTALLED_BACKENDS = {
+    #"att": {
+    #    "ENGINE": "rapidsms.backends.gsm",
+    #    "PORT": "/dev/ttyUSB0"
+    #},
+    #"verizon": {
+    #    "ENGINE": "rapidsms.backends.gsm,
+    #    "PORT": "/dev/ttyUSB1"
+    #},
+    "message_tester": {
+        "ENGINE": "rapidsms.backends.bucket"
+    }
+}
+
+# this rapidsms-specific setting defines which views are linked by the
+# tabbed navigation. when adding an app to INSTALLED_APPS, you may wish
+# to add it here, also, to expose it in the rapidsms ui.
+RAPIDSMS_TABS = [
+    ("rapidsms.contrib.messagelog.views.message_log",       "Message Log"),
+    ("rapidsms.contrib.messaging.views.messaging",          "Messaging"),
+    ("rapidsms.contrib.httptester.views.generate_identity", "Message Tester"),
+]
