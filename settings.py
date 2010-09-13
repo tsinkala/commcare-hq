@@ -118,7 +118,7 @@ HQ_APPS = (
 
 RAPIDSMS_APPS = (
     # RapidSMS Core
-    # 'djtables',
+    'djtables',
     'rapidsms',
 
     # Common Dependencies
@@ -138,6 +138,16 @@ RAPIDSMS_APPS = (
 
 INSTALLED_APPS = DEFAULT_APPS + HQ_APPS + RAPIDSMS_APPS
 
+TABS = [
+    ("message_log", "Message Log"),
+    #("rapidsms.contrib.messagelog.views.message_log", "Message Log"),
+    ("rapidsms.contrib.messaging.views.messaging", "Messaging"),
+    ("rapidsms.contrib.httptester.views.generate_identity", "Message Tester"),
+    ('corehq.apps.hqwebapp.views.dashboard', 'Dashboard'),
+    ('corehq.apps.releasemanager.views.projects', 'Release Manager'),
+    ('corehq.apps.receiver.views.show_submits', 'Submissions'),
+    ('corehq.apps.xforms.views.dashboard', 'XForms'),
+]
 
 # after login, django redirects to this URL
 # rather than the default 'accounts/profile'
@@ -189,15 +199,6 @@ EMAIL_PORT = 587
 EMAIL_HOST_USER = "notifications@dimagi.com"
 EMAIL_HOST_PASSWORD = "alpha321"
 EMAIL_USE_TLS = True
-
-
-TABS = [
-    ('corehq.apps.hqwebapp.views.dashboard', 'Dashboard'),
-    ('corehq.apps.releasemanager.views.projects', 'Release Manager'),
-    ('corehq.apps.receiver.views.show_submits', 'Submissions'),
-    ('corehq.apps.xforms.views.dashboard', 'XForms'),
-]
-
 
 # import local settings if we find them
 try:
@@ -260,11 +261,3 @@ INSTALLED_BACKENDS = {
     }
 }
 
-# this rapidsms-specific setting defines which views are linked by the
-# tabbed navigation. when adding an app to INSTALLED_APPS, you may wish
-# to add it here, also, to expose it in the rapidsms ui.
-RAPIDSMS_TABS = [
-    ("rapidsms.contrib.messagelog.views.message_log",       "Message Log"),
-    ("rapidsms.contrib.messaging.views.messaging",          "Messaging"),
-    ("rapidsms.contrib.httptester.views.generate_identity", "Message Tester"),
-]
