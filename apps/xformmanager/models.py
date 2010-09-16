@@ -85,7 +85,7 @@ class ElementDefModel(models.Model):
                   " JOIN receiver_submission su ON a.submission_id=su.id " + \
                   " WHERE m.formdefmodel_id=%s " % self.form.pk
         else:
-            sql = "SELECT * from %s" % self.table_name
+            sql = "SELECT * from %s AS s WHERE 1" % self.table_name
         # add filtering
         if column_filters:
             for filter in column_filters:
@@ -122,7 +122,7 @@ class ElementDefModel(models.Model):
             for blacklisted_user in blacklist:
                 column_filters.append((username_col, "<>", blacklisted_user))
         return self._get_cursor(column_filters, sort_column, sort_descending).fetchall()
-    
+
     def get_column_names(self):
         '''Get the column names associated with this form's schema.'''
         return get_column_names(self._get_cursor())
