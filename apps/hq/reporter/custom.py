@@ -189,7 +189,7 @@ def follow_up_report(report_schedule, run_frequency):
     (startdate, enddate) = reporter.get_daterange(run_frequency)
 
     for domain in domains:
-        rendered_text += _get_form_report_email_text(domain, startdate, enddate, target_namespace="http://dev.commcarehq.org/BRAC/CHP/HomeVisit/Followup")
+        rendered_text += _get_form_report_email_text(domain, startdate, enddate, form_name="schema_dodoma_brac_chp_homevisit_followup_12")
 
     if report_schedule.report_delivery == 'email':
         usr = report_schedule.recipient_user
@@ -199,9 +199,10 @@ def follow_up_report(report_schedule, run_frequency):
         reporter.transport_email(rendered_text, usr, params={"startdate":startdate,"enddate":enddate,"email_subject":subject})
     return
 
-def _get_form_report_email_text(domain, startdate, enddate, target_namespace):
+def _get_form_report_email_text(domain, startdate, enddate, form_name):
     forms = FormDefModel.objects.all().filter(domain=domain)
-    form = forms.get(target_namespace__icontains=target_namespace)
+    forms = forms.filter(form_name__icontains=form_name)
+    form = forms[0]
     data = _get_flat_data_for_domain(domain, startdate, enddate, True, form)
     context = {}
     heading = "%s Report on Follow-Up Visits: %s - %s" % (domain, startdate.strftime('%m/%d/%Y'), enddate.strftime('%m/%d/%Y'))

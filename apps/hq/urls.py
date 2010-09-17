@@ -15,7 +15,7 @@ urlpatterns = patterns('',
 
     # this view is purely for viewing/testing custom reports
     # so it's not linked-to from anywhere
-    # (r'^hq/report?$', 'hq.views.report'),
+    (r'^hq/report?$', 'hq.views.report'),
     
     (r'', include('hq.reporter.api_.urls')),    
 )
