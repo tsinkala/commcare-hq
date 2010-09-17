@@ -189,7 +189,11 @@ def follow_up_report(report_schedule, run_frequency):
     (startdate, enddate) = reporter.get_daterange(run_frequency)
 
     for domain in domains:
-        rendered_text += _get_form_report_email_text(domain, startdate, enddate, form_name="schema_dodoma_brac_chp_homevisit_followup_12")
+        try:
+            rendered_text += _get_form_report_email_text(domain, startdate, enddate, form_name="schema_dodoma_brac_chp_homevisit_followup_12")
+        except FormDefModel.DoesNotExist:
+            # if form doesn't exist for a given domain, that's fine, ignore it
+            pass
 
     if report_schedule.report_delivery == 'email':
         usr = report_schedule.recipient_user
@@ -201,8 +205,7 @@ def follow_up_report(report_schedule, run_frequency):
 
 def _get_form_report_email_text(domain, startdate, enddate, form_name):
     forms = FormDefModel.objects.all().filter(domain=domain)
-    forms = forms.filter(form_name__icontains=form_name)
-    form = forms[0]
+    form = forms.get(form_name__icontains=form_name)
     data = _get_flat_data_for_domain(domain, startdate, enddate, True, form)
     context = {}
     heading = "%s Report on Follow-Up Visits: %s - %s" % (domain, startdate.strftime('%m/%d/%Y'), enddate.strftime('%m/%d/%Y'))
