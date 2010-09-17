@@ -378,5 +378,5 @@ def report(request):
     now = datetime.now()
     last_week = now-timedelta(days=7)
     #rendered_text = _get_catch_all_email_text(domain, yesterday-delta, now+delta)
-    rendered_text = _get_form_report_email_text(domain, last_week, now, form_name="BRAC")
+    rendered_text = _get_form_report_email_text(domain, last_week, now, form_name="schema_dodoma_brac_chp_homevisit_followup_12")
     return HttpResponse(rendered_text)
