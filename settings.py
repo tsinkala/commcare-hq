@@ -114,6 +114,7 @@ HQ_APPS = (
     'corehq.apps.requestlogger',
     'corehq.apps.docs',
     'ota_restore',
+    'hqui',
 )
 
 RAPIDSMS_APPS = (
