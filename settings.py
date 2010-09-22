@@ -78,7 +78,7 @@ TEMPLATE_DIRS = [
     # Don't forget to use absolute paths, not relative paths.
 ]
 
-BASE_TEMPLATE = "layout.html"
+
 LOGIN_TEMPLATE="login_and_password/login.html"
 LOGGEDOUT_TEMPLATE="loggedout.html"
 
@@ -179,7 +179,7 @@ PHOTO_IMAGE_PATH=os.path.join("data","photos")
 ####### Shared/Global/UI Settings ######
 
 # restyle some templates
-BASE_TEMPLATE="hq-layout.html"
+BASE_TEMPLATE="hqui/base.html"
 LOGIN_TEMPLATE="login_and_password/login.html"
 LOGGEDOUT_TEMPLATE="loggedout.html"
 
