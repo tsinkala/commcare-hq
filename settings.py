@@ -109,14 +109,14 @@ HQ_APPS = (
     # lame: xforms needs to be run last
     # because it resets xmlrouter, which breaks functionality in
     # other code which is dependent on xmlrouter's global initialization
-    'corehq.apps.xforms',
+    #'corehq.apps.xforms',
     'corehq.apps.releasemanager',
     'corehq.apps.requestlogger',
     'corehq.apps.docs',
     'ota_restore',
-    'hqui',
     'couchforms',
     'couchexport',
+    'corehq.apps.new_xforms',
 )
 
 RAPIDSMS_APPS = (
@@ -179,7 +179,7 @@ PHOTO_IMAGE_PATH=os.path.join("data","photos")
 ####### Shared/Global/UI Settings ######
 
 # restyle some templates
-BASE_TEMPLATE="hqui/base.html"
+BASE_TEMPLATE="new_xforms/base.html"
 LOGIN_TEMPLATE="login_and_password/login.html"
 LOGGEDOUT_TEMPLATE="loggedout.html"
 
@@ -281,6 +281,5 @@ XFORMS_POST_URL = "http://%s/%s/_design/couchforms/_update/xform/" % (COUCH_SERV
 COUCHDB_DATABASES = [(app_label, COUCH_DATABASE) for app_label in [
         'couchforms',
         'couchexport',
-        'hqui',
         'new_xforms'
 ]]
