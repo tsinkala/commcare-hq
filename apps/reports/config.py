@@ -4,3 +4,4 @@
 title = "Reports"
 tab_link = "/reports"
 
+PATHFINDER_REPORT_CASE_NAME = "Pathfinder_2"

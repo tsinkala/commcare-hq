@@ -12,6 +12,7 @@ import hq.utils as utils
 import inspector as repinspector
 import logging
 import metastats as metastats
+from reports.config import PATHFINDER_REPORT_CASE_NAME
 
 
 
@@ -269,7 +270,6 @@ def admin_per_form_report(report_schedule, run_frequency):
     fulltext = ''
     for fdef in defs:
         report_payload = repinspector.get_report_as_tuples_filtered(hierarchy, [fdef], startdate, enddate, 0)
-        print "doing report for: " + str(fdef)
         if transport == 'email':
             do_separate = True
             params = {}
@@ -351,7 +351,7 @@ def provider_summary(report_schedule, run_frequency):
     # this is a hack to ensure that the monthly reports are sent on the last day of the month
     today = datetime.now().date()
     tomorrow = today + timedelta(days=1)
-    case = Case.objects.get(name="Pathfinder_1")
+    case = Case.objects.get(name=PATHFINDER_REPORT_CASE_NAME)
     blacklist = BlacklistedUser.for_domain(case.domain)
     # if it's the last day of the month then send the report
     if tomorrow.day == 1:
@@ -369,7 +369,7 @@ def provider_summary(report_schedule, run_frequency):
                     
                     output = StringIO()
                     doc = SimpleDocTemplate(output)
-                    data_list = get_provider_data_by_case("Pathfinder_1", 
+                    data_list = get_provider_data_by_case(PATHFINDER_REPORT_CASE_NAME, 
                                                           provider, startdate, 
                                                           enddate)
                     get_provider_summary_pdf(startdate.month, startdate.year, 
