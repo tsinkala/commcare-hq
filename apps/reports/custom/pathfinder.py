@@ -9,6 +9,7 @@ from hq.models import BlacklistedUser
 import logging
 import calendar
 from phone.models import PhoneUserInfo
+from reports.config import PATHFINDER_REPORT_CASE_NAME
 '''Report file for custom Pathfinder reports'''
 # see mvp.py for an explanation of how these are used.
 
@@ -345,7 +346,8 @@ class WardSummaryData(object):
         self.chw_id = chw_id
         self.startdate = startdate
         self.enddate = enddate
-
+        
+        cols = get_cols(case)
         
         #add ward, district, region for this chw
         # puis = PhoneUserInfo.objects.all()
@@ -382,51 +384,51 @@ class WardSummaryData(object):
                 # collect reg_forms matching the correct dates
                 # get general data like birthdate, sex, chw_name. location info
                 for reg in reg_forms:
-                    date = reg[COLS["timeend"]]
+                    date = reg[cols["timeend"]]
                     if date and date.date() >= startdate and date.date() \
                         < enddate:
                         matching_reg_forms.append(reg)
-                    birthdate = reg[COLS["dob"]]
-                    sex = reg[COLS["sex"]]
-                    if not self.chw_name and reg[COLS["username"]]:
-                        self.chw_name = reg[COLS["username"]]
-                    elif self.chw_name and reg[COLS["username"]]:
-                        if self.chw_name != reg[COLS["username"]]:
+                    birthdate = reg[cols["dob"]]
+                    sex = reg[cols["sex"]]
+                    if not self.chw_name and reg[cols["username"]]:
+                        self.chw_name = reg[cols["username"]]
+                    elif self.chw_name and reg[cols["username"]]:
+                        if self.chw_name != reg[cols["username"]]:
                             logging.debug("Warning, multiple ids found for %s: %s and %s" %\
                                 (self.chw_id, self.chw_name, 
-                                 reg[COLS["username"]]))
+                                 reg[cols["username"]]))
                         
                 # collect followup forms matching the correct dates
                 matching_followups = []
                 for follow in followup_forms:
-                    date = follow[COLS["timeend"]]
+                    date = follow[cols["timeend"]]
                     if date and date.date() >= startdate and date.date() \
                         < enddate:
                         matching_followups.append(follow)
                     # if there will always be a registration form, could leave this out
-                    if not self.chw_name and follow[COLS["username"]]:
-                        self.chw_name = follow[COLS["username"]]
-                    elif self.chw_name and follow[COLS["username"]]:
-                        if self.chw_name != follow[COLS["username"]]:
+                    if not self.chw_name and follow[cols["username"]]:
+                        self.chw_name = follow[cols["username"]]
+                    elif self.chw_name and follow[cols["username"]]:
+                        if self.chw_name != follow[cols["username"]]:
                             logging.debug("Warning, multiple ids found for %s: %s and %s" %\
                                 (self.chw_id, self.chw_name, 
-                                 follow[COLS["username"]]))
+                                 follow[cols["username"]]))
                 
                 # collect resolved referral forms matching the correct dates
                 matching_refs = []
                 for ref in ref_forms:
-                    date = ref[COLS["timeend"]]
+                    date = ref[cols["timeend"]]
                     if date and date.date() >= startdate and date.date() \
                         < enddate:
                         matching_refs.append(ref)
                     # if there will always be a registration form, could leave this out
-                    if not self.chw_name and ref[COLS["username"]]:
-                        self.chw_name = ref[COLS["username"]]
-                    elif self.chw_name and ref[COLS["username"]]:
-                        if self.chw_name != ref[COLS["username"]]:
+                    if not self.chw_name and ref[cols["username"]]:
+                        self.chw_name = ref[cols["username"]]
+                    elif self.chw_name and ref[cols["username"]]:
+                        if self.chw_name != ref[cols["username"]]:
                             logging.debug("Warning, multiple ids found for %s: %s and %s" %\
                                 (self.chw_id, self.chw_name, 
-                                 ref[COLS["username"]]))
+                                 ref[cols["username"]]))
                             
                 # collect counts for new clients
                 reg_form = None
@@ -435,7 +437,7 @@ class WardSummaryData(object):
                         logging.debug("Warning, multiple registration forms found for %s" %\
                                       client_id)
                     reg_form = matching_reg_forms[0]
-                    if reg_form[COLS["reg_hiv"]] == 1:
+                    if reg_form[cols["reg_hiv"]] == 1:
                         if sex == "m":
                             self.new_plha_m += 1
                         elif sex == "f":
@@ -453,7 +455,7 @@ class WardSummaryData(object):
                     # a single client could have multiple counts for any of these if multiple
                     # followup forms were submitted for them in the last month
                     for followup in matching_followups:
-                        type_of_client = followup[COLS["type_client"]] 
+                        type_of_client = followup[cols["type_client"]] 
                         if type_of_client == "hiv":
                             if sex == "m":
                                 self.existing_plha_m += 1
@@ -465,7 +467,7 @@ class WardSummaryData(object):
                             elif sex == "f":
                                 self.existing_cip_f += 1
                                 
-                        why_missing = followup[COLS["status"]]
+                        why_missing = followup[cols["status"]]
                         if why_missing == "dead":
                             if type_of_client == "hiv":
                                 if sex == "m":
@@ -488,25 +490,25 @@ class WardSummaryData(object):
                                     self.transfer_cip_m += 1
                                 elif sex == "f":
                                     self.transfer_cip_f += 1
-                        if followup[COLS["VCT"]] == 1:
+                        if followup[cols["VCT"]] == 1:
                             self.ref_vct += 1
-                        if followup[COLS["OIS"]] == 1:
+                        if followup[cols["OIS"]] == 1:
                             self.ref_ois += 1
-                        if followup[COLS["CTC"]] == 1:
+                        if followup[cols["CTC"]] == 1:
                             self.ref_ctc += 1
-                        if followup[COLS["PMTCT"]] == 1:
+                        if followup[cols["PMTCT"]] == 1:
                             self.ref_pmtct += 1
-                        if followup[COLS["FP"]] == 1:
+                        if followup[cols["FP"]] == 1:
                             self.ref_fp += 1
-                        if followup[COLS["SG"]] == 1:
+                        if followup[cols["SG"]] == 1:
                             self.ref_sg += 1 
-                        if followup[COLS["TB"]] == 1:
+                        if followup[cols["TB"]] == 1:
                             self.ref_tb += 1
                 
                 # Counts for confirmed referrals this month
                 if matching_refs:
                     for ref in matching_refs:
-                        if ref[COLS["ref_done"]] == "yes":
+                        if ref[cols["ref_done"]] == "yes":
                             self.conf_ref += 1
                             
                 # Get counts of adults and children
@@ -601,80 +603,82 @@ class ProviderSummaryData(object):
         # use form_type?
         [reg_forms, followup_forms, ref_forms] = [client_data[form] for form 
                                                   in case.form_identifiers]
+        cols = get_cols(case)
+        
         for reg in reg_forms:
-            date = reg[COLS["timeend"]]
+            date = reg[cols["timeend"]]
             if date and date.date() >= startdate and date.date() < enddate:
                 self.num_visits += 1
-            diff = enddate - reg[COLS["dob"]]
+            diff = enddate - reg[cols["dob"]]
             self.age = diff.days/365
-            if reg[COLS["sex"]] == 'm':
+            if reg[cols["sex"]] == 'm':
                 self.sex = "Male"
-            elif reg[COLS["sex"]] == 'f':
+            elif reg[cols["sex"]] == 'f':
                 self.sex = "Female"
-            self.patient_code = reg[COLS["patient_id"]]
-            self.hiv_status = reg[COLS["hiv_status"]]
-            self.ctc_num = reg[COLS["ctc_num"]]
+            self.patient_code = reg[cols["patient_id"]]
+            self.hiv_status = reg[cols["hiv_status"]]
+            self.ctc_num = reg[cols["ctc_num"]]
         
         matching_follow_forms = []
         for follow in followup_forms:
-            date = follow[COLS['timeend']]
+            date = follow[cols['timeend']]
             if date and date.date() >= startdate and date.date() < enddate:
                 matching_follow_forms.append(follow)
         
         for ref in ref_forms:
-            date = ref[COLS['timeend']]
+            date = ref[cols['timeend']]
             if date and date.date() >= startdate and date.date() < enddate:
                 self.num_visits += 1
-                if ref[COLS["ref_done"]] == "yes":
+                if ref[cols["ref_done"]] == "yes":
                         self.referrals_completed += 1
         
         for follow in matching_follow_forms:
             self.num_visits += 1
 
-            self.hbc_status += follow[COLS['status']] +"; "
-            self.functional_status += follow[COLS['func_status']] +"; "
-            if follow[COLS['ctc_status']] == 'registered_no_arvs':
+            self.hbc_status += follow[cols['status']] +"; "
+            self.functional_status += follow[cols['func_status']] +"; "
+            if follow[cols['ctc_status']] == 'registered_no_arvs':
                 self.ctc_status += 'registered no arvs; '
-            if follow[COLS['ctc_status']] == 'registered_and_arvs':
+            if follow[cols['ctc_status']] == 'registered_and_arvs':
                 self.ctc_status += 'registered and arvs; '
-            if follow[COLS['ctc_status']] == 'not_registered':
+            if follow[cols['ctc_status']] == 'not_registered':
                 self.ctc_status += 'not registered; '
-            self.items_provided += follow[COLS['items']] +"; "
-            if follow[COLS['services_nut']] == 1:
+            self.items_provided += follow[cols['items']] +"; "
+            if follow[cols['services_nut']] == 1:
                 self.services_provided += 'nutritional counselling; '
-            if follow[COLS['services_infec']] == 1:
+            if follow[cols['services_infec']] == 1:
                 self.services_provided += 'infectious education; '
-            if follow[COLS['services_fp']] == 1:
+            if follow[cols['services_fp']] == 1:
                 self.services_provided += 'family planning; '
-            if follow[COLS['services_testing']] == 1:
+            if follow[cols['services_testing']] == 1:
                 self.services_provided += 'testing; '
-            if follow[COLS['services_counselling']] == 1:
+            if follow[cols['services_counselling']] == 1:
                 self.services_provided += 'counselling; '
-            if follow[COLS['services_house']] == 1:
+            if follow[cols['services_house']] == 1:
                 self.services_provided += 'house; '
-            if follow[COLS['services_health']] == 1:
+            if follow[cols['services_health']] == 1:
                 self.services_provided += 'health; '
-            if follow[COLS['services_treatment']] == 1:
+            if follow[cols['services_treatment']] == 1:
                 self.services_provided += 'treatment; '
-            if follow[COLS['services_delivery']] == 1:
+            if follow[cols['services_delivery']] == 1:
                 self.services_provided += 'delivery; '
-            if follow[COLS['services_net']] == 1:
+            if follow[cols['services_net']] == 1:
                 self.services_provided += 'net; '
-            if follow[COLS['services_std']] == 1:
+            if follow[cols['services_std']] == 1:
                 self.services_provided += 'std; '
-            if follow[COLS['VCT']] == 1:
+            if follow[cols['VCT']] == 1:
                 self.referrals_made += 1
-            if follow[COLS['OIS']] == 1:
+            if follow[cols['OIS']] == 1:
                 self.referrals_made +=1
-            if follow[COLS['CTC']] == 1:
+            if follow[cols['CTC']] == 1:
                 self.referrals_made += 1
-            if follow[COLS['PMTCT']] == 1:
+            if follow[cols['PMTCT']] == 1:
                 self.referrals_made +=1
-            if follow[COLS['FP']] == 1:
+            if follow[cols['FP']] == 1:
                 self.referrals_made += 1
-            if follow[COLS['SG']] == 1:
+            if follow[cols['SG']] == 1:
                 self.referrals_made +=1
-            if follow[COLS['TB']] == 1:
+            if follow[cols['TB']] == 1:
                 self.referrals_made += 1
         self.services_provided = self.services_provided.rsplit(';',1)[0]
         self.items_provided = self.items_provided.rsplit(';',1)[0]
@@ -768,8 +772,16 @@ class HBCMonthlySummaryData(object):
         self.ward = ward
         blacklist = BlacklistedUser.for_domain(case.domain)
         puis = PhoneUserInfo.objects.all()
+        
+        cols = get_cols(case)
+        #print "setup report object"
         if puis != None:
+            i = 0
+            total = len(puis)
             for pui in puis:
+                i += 1
+                #print "user: %s (%s of %s)" % (pui.username, i, total)
+        
                 if pui.username not in blacklist:
                     form_this_month = False
                     in_ward = False
@@ -784,6 +796,7 @@ class HBCMonthlySummaryData(object):
                             
                     if chw_data != None:
                         for client_data in chw_data.values():
+                            #print "inner loop (of %s)" % (len(chw_data))
                             # use form_type? 
                             [reg_forms, followup_forms, ref_forms] = [client_data[form] 
                                                                       for form in 
@@ -795,24 +808,24 @@ class HBCMonthlySummaryData(object):
                             client_ever = False
                             match_reg_forms = []
                             for reg in reg_forms:
-                                date = reg[COLS["timeend"]]
+                                date = reg[cols["timeend"]]
                                 if date and date.date() >= startdate and date.date() \
                                     < enddate:
                                     match_reg_forms.append(reg)
-                                sex = reg[COLS["sex"]]
-                                diff = enddate - reg[COLS["dob"]]
+                                sex = reg[cols["sex"]]
+                                diff = enddate - reg[cols["dob"]]
                                 years = diff.days/365
                             
                             match_follow_forms = []
                             for follow in followup_forms:
-                                date = follow[COLS['timeend']]
+                                date = follow[cols['timeend']]
                                 if date and date.date() >= startdate and date.date() \
                                     < enddate:
                                     match_follow_forms.append(follow)
                             
                             match_ref_forms = []
                             for ref in ref_forms:
-                                date = ref[COLS['timeend']]
+                                date = ref[cols['timeend']]
                                 if date and date.date() >= startdate and date.date() \
                                     < enddate:
                                     match_ref_forms.append(ref)
@@ -827,7 +840,7 @@ class HBCMonthlySummaryData(object):
                                 client_ever = True
                                 
                                 # Count HIV status
-                                hiv = reg[COLS['hiv_status']]
+                                hiv = reg[cols['hiv_status']]
                                 if hiv == 'Positive':
                                     if sex == 'm':
                                         self.positive_m += 1
@@ -855,12 +868,12 @@ class HBCMonthlySummaryData(object):
                             opted_out = False
                             if match_follow_forms:
                                 for follow in match_follow_forms:
-                                    status = follow[COLS['status']]
+                                    status = follow[cols['status']]
                                     if status == 'new':
                                         client_new = True
                                     if status  == 'new' or status == 'continuing':
                                         client_new_cont = True
-                                    ctc = follow[COLS['ctc_status']]
+                                    ctc = follow[cols['ctc_status']]
                                     if ctc == 'registered_no_arvs':
                                         ctc_no_arv = True
                                     elif ctc == 'registered_and_arvs':
@@ -980,7 +993,7 @@ MED_MAPPING = (("pathfinder_followup_type_med_septrini", 1),
 WATER_ITN_MAPPING = (("pathfinder_followup_mosquito_net", 1),
                      ("pathfinder_followup_water_guard", 2))
 
-COLS = {"timeend":"meta_timeend", 
+COLS_V1 = {"timeend":"meta_timeend", 
         "dob":"pathfinder_registration_patient_date_of_birth", 
         "sex":"pathfinder_registration_patient_sex", 
         "username":"meta_username", 
@@ -1015,3 +1028,48 @@ COLS = {"timeend":"meta_timeend",
         "services_delivery":"pathfinder_followup_patient_services_given_safe_delivery",
         "services_net":"pathfinder_followup_patient_services_given_net",
         "services_std":"pathfinder_followup_patient_services_given_std"}
+
+
+COLS_V2 = {"timeend":"meta_timeend", 
+        "dob":"pathfinder_registration_patient_date_of_birth", 
+        "sex":"pathfinder_registration_patient_sex", 
+        "username":"meta_username", 
+        "region":"pathfinder_registration_patient_region", #ask joachim -- definitely wrong
+        "district":"pathfinder_registration_patient_district", #ask joachim -- definitely wrong
+        "ward":"pathfinder_registration_patient_ward", #ask joachim -- definitely wrong
+        "reg_hiv":"pathfinder_registration_patient_registration_cause_hiv", 
+        "type_client":"pf_followup_patient_type_of_client",
+        "status":"pf_followup_patient_reg_followup_hiv",
+        "VCT":"pf_followup_patient_referrals_hiv_coun_and_test",
+        "OIS":"pf_followup_patient_referrals_hiv_opp_inf", 
+        "CTC":"pf_followup_patient_referrals_hiv_ref_to_ctc", 
+        "PMTCT":"pf_followup_patient_referrals_hiv_pmtct", 
+        "FP":"pf_followup_patient_referrals_hiv_ref_fp", 
+        "SG":"pf_followup_patient_referrals_hiv_other_services", 
+        "TB":"pf_followup_patient_referrals_hiv_tb_clinic", 
+        "ref_done":"pathfinder_referral_client_referral", 
+        "patient_id":"pathfinder_registration_patient_patient_id",
+        "hiv_status":"inder_registration_patient_hiv_status_during_registration",
+        "func_status":"pf_followup_patient_client_condition",
+        "ctc_status":"pf_followup_patient_ctc",
+        "ctc_num":"pathfinder_registration_patient_number_given_at_ctc",
+        "items":"pf_followup_patient_medication_given",
+        "services_nut":"pf_followup_patient_services_given_nutritional",
+        "services_infec":"pf_followup_patient_services_given_infectious",
+        "services_fp":"pf_followup_patient_services_given_fp",
+        "services_testing":"pf_followup_patient_services_given_testing",
+        "services_counselling":"pf_followup_patient_services_given_counselling",
+        "services_house":"pf_followup_patient_services_given_house",
+        "services_health":"pf_followup_patient_services_given_health",
+        "services_treatment":"pf_followup_patient_services_given_treatment",
+        "services_delivery":"pf_followup_patient_services_given_safe_delivery",
+        "services_net":"pf_followup_patient_services_given_net",
+        "services_std":"pf_followup_patient_services_given_std"}
+
+
+def get_cols(case):
+    # hackity hack.  hackity hack
+    if case.name == "Pathfinder_1":
+        return COLS_V1
+    else:
+        return COLS_V2
