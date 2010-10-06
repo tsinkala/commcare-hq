@@ -1,0 +1,70 @@
+[
+  {
+    "pk": 25, 
+    "model": "reports.formidentifier", 
+    "fields": {
+      "identity_column": "meta_username|meta_deviceid|pathfinder_registration_case_case_id", 
+      "sort_descending": true, 
+      "form": 237, 
+      "sorting_column": ""
+    }
+  }, 
+  {
+    "pk": 26, 
+    "model": "reports.formidentifier", 
+    "fields": {
+      "identity_column": "meta_username|meta_deviceid|pf_followup_case_case_id", 
+      "sort_descending": true, 
+      "form": 242, 
+      "sorting_column": ""
+    }
+  }, 
+  {
+    "pk": 27, 
+    "model": "reports.formidentifier", 
+    "fields": {
+      "identity_column": "meta_username|meta_deviceid|pathfinder_referral_case_case_id", 
+      "sort_descending": true, 
+      "form": 239, 
+      "sorting_column": ""
+    }
+  }, 
+  {
+    "pk": 6, 
+    "model": "reports.case", 
+    "fields": {
+      "domain": 1, 
+      "name": "Pathfinder_2"
+    }
+  }, 
+  {
+    "pk": 25, 
+    "model": "reports.caseformidentifier", 
+    "fields": {
+      "case": 6, 
+      "form_type": "open", 
+      "sequence_id": 1, 
+      "form_identifier": 25
+    }
+  }, 
+  {
+    "pk": 26, 
+    "model": "reports.caseformidentifier", 
+    "fields": {
+      "case": 6, 
+      "form_type": "follow", 
+      "sequence_id": 2, 
+      "form_identifier": 26
+    }
+  }, 
+  {
+    "pk": 27, 
+    "model": "reports.caseformidentifier", 
+    "fields": {
+      "case": 6, 
+      "form_type": "referral", 
+      "sequence_id": 3, 
+      "form_identifier": 27
+    }
+  }  
+]
