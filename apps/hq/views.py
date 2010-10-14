@@ -369,3 +369,14 @@ def comma(string_or_list):
         list = string_or_list
         return ", ".join(list)
 
+@login_and_domain_required
+def report(request):
+    # this view is used purely to test a given hq/report
+    from reporter.custom import _get_catch_all_email_text, _get_form_report_email_text
+    from datetime import datetime, timedelta
+    domain = Domain.objects.get(name='BRAC')
+    now = datetime.now()
+    last_week = now-timedelta(days=7)
+    #rendered_text = _get_catch_all_email_text(domain, yesterday-delta, now+delta)
+    rendered_text = _get_form_report_email_text(domain, last_week, now, form_name="schema_dodoma_brac_chp_homevisit_followup_12")
+    return HttpResponse(rendered_text)

@@ -18,6 +18,7 @@ from custom.pathfinder import ProviderSummaryData, WardSummaryData, HBCMonthlySu
 
 from StringIO import StringIO
 import calendar
+from reports.config import PATHFINDER_REPORT_CASE_NAME
 try:
     from reportlab.pdfgen import canvas
     from reportlab.platypus import *
@@ -286,15 +287,15 @@ def ward_sum_csv(request, month, year, ward):
 @require_domain("pathfinder")
 def sum_prov_csv(request, chw_id, month, year):
     ''' Creates CSV file of summary by provider report'''
-    case_name = "Pathfinder_1"
+    case_name = PATHFINDER_REPORT_CASE_NAME
     (startdate, enddate) = get_start_end(month, year)
     try:
         case = Case.objects.get(name=case_name)
     except Case.DoesNotExist:
         return '''Sorry, it doesn't look like the forms that this report 
                   depends on have been uploaded.'''
+    
     data_by_chw = get_data_by_chw(case)
-
     chw_data = {}
     if chw_id in data_by_chw:
         chw_data = data_by_chw[chw_id]
@@ -327,7 +328,7 @@ def sum_prov_csv(request, chw_id, month, year):
 @require_domain("pathfinder")
 def hbc_sum_csv(request, month, year, ward):
     '''Creates csv file of HBC monthly summary report'''
-    case_name = "Pathfinder_1" 
+    case_name = PATHFINDER_REPORT_CASE_NAME 
     (startdate, enddate) = get_start_end(month, year)
     
     try:
@@ -394,7 +395,7 @@ def hbc_sum_pdf(request, month, year, ward):
 @require_domain("pathfinder")
 def sum_prov_pdf(request, chw_id, month, year):
     '''Creates PDF file of summary by provider report'''
-    case_name = "Pathfinder_1"
+    case_name = PATHFINDER_REPORT_CASE_NAME
     (startdate, enddate) = get_start_end(month, year)
     client_data_list = get_provider_data_by_case(case_name, chw_id, startdate, enddate)
     data = get_user_data(chw_id)

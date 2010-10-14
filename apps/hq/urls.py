@@ -12,6 +12,10 @@ urlpatterns = patterns('',
     url(r'^reporters/(?P<pk>\d+)/?$', views.edit_reporter, name="view-reporter"),
        
     (r'^stats/?$', 'hq.views.reporter_stats'),
+
+    # this view is purely for viewing/testing custom reports
+    # so it's not linked-to from anywhere
+    (r'^hq/report?$', 'hq.views.report'),
     
     (r'', include('hq.reporter.api_.urls')),    
 )

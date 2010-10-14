@@ -5,6 +5,7 @@ import calendar
 from phone.models import PhoneUserInfo, Phone
 from StringIO import StringIO
 from hq.models import BlacklistedUser
+from reports.config import PATHFINDER_REPORT_CASE_NAME
 try:
     from reportlab.pdfgen import canvas
     from reportlab.platypus import *
@@ -186,7 +187,7 @@ def get_ward_chw_data_list(startdate, enddate, ward):
     ''' Get a list of WardSummaryData's for the given ward'''
     chw_data_list = []
     
-    case_name = "Pathfinder_1" 
+    case_name = PATHFINDER_REPORT_CASE_NAME 
     try:
         case = Case.objects.get(name=case_name)
     except Case.DoesNotExist:
@@ -219,7 +220,7 @@ def get_provider_summary_data(startdate, enddate, month, year, provider):
     additional_data = None
     if userinfo != None:
         additional_data = userinfo.additional_data
-    case_name = "Pathfinder_1"    
+    case_name = PATHFINDER_REPORT_CASE_NAME    
     client_data_list = get_provider_data_by_case(case_name, provider, startdate, enddate)
     context["all_data"] = client_data_list
     context["month"] = calendar.month_name[month]
@@ -255,7 +256,7 @@ def get_provider_data_by_case(case_name, provider, startdate, enddate):
 def get_hbc_summary_data(startdate, enddate, month, year, ward):
     ''' Gets the data for the hbc monthly summary report given a ward'''
     context = {}
-    case_name = "Pathfinder_1" 
+    case_name = PATHFINDER_REPORT_CASE_NAME 
     try:
         case = Case.objects.get(name=case_name)
     except Case.DoesNotExist:

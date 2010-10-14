@@ -78,6 +78,7 @@ class ElementDefModel(models.Model):
            get_rows for documentation of the parameters.'''
 
         # Note that the data view is dependent on id being first
+        is_subtable = False
         if not self.parent:
             sql = " SELECT su.id as submission_id, su.submit_time, s.* FROM %s s " % self.table_name + \
                   " JOIN xformmanager_metadata m ON m.raw_data=s.id " + \
@@ -85,7 +86,8 @@ class ElementDefModel(models.Model):
                   " JOIN receiver_submission su ON a.submission_id=su.id " + \
                   " WHERE m.formdefmodel_id=%s " % self.form.pk
         else:
-            sql = "SELECT * from %s AS s WHERE 1" % self.table_name
+            is_subtable = True
+            sql = "SELECT * from %s WHERE 1" % self.table_name
         # add filtering
         if column_filters:
             for filter in column_filters:
@@ -94,14 +96,19 @@ class ElementDefModel(models.Model):
                         "e.g.['pk','=','3'] (only %s given)" % len(filter))
                 if isinstance( filter[2],basestring ):
                     # strings need to be quoted
-                    if filter[0] == 'submit_time':
+                    if is_subtable:
+                        to_append = " AND %s %s '%s' " % tuple( filter )
+                    elif filter[0] == 'submit_time':
                         to_append = " AND su.%s %s '%s' " % tuple( filter )
                     else:
                         to_append = " AND s.%s %s '%s' " % tuple( filter )
                 else:
                     # force non-strings to strings
                     filter[2] = unicode(filter[2]) 
-                    to_append = " AND s.%s %s %s " % tuple( filter )
+                    if is_subtable:
+                        to_append = " AND %s %s %s " % tuple( filter )
+                    else:
+                        to_append = " AND s.%s %s %s " % tuple( filter )
                 sql = sql + to_append
 
         sql = sql + get_sort_string(sort_column, sort_descending)
@@ -122,7 +129,7 @@ class ElementDefModel(models.Model):
             for blacklisted_user in blacklist:
                 column_filters.append((username_col, "<>", blacklisted_user))
         return self._get_cursor(column_filters, sort_column, sort_descending).fetchall()
-
+    
     def get_column_names(self):
         '''Get the column names associated with this form's schema.'''
         return get_column_names(self._get_cursor())

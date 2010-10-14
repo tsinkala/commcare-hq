@@ -12,10 +12,11 @@ import hq.utils as utils
 import inspector as repinspector
 import logging
 import metastats as metastats
+from reports.config import PATHFINDER_REPORT_CASE_NAME
 
 
 
-def _get_flat_data_for_domain(domain, startdate, enddate, use_blacklist=True):
+def _get_flat_data_for_domain(domain, startdate, enddate, use_blacklist=True, form=None):
     
     #next, let's get all the unclaimed
     #first, let's iterate through all the data and get the usernames
@@ -23,7 +24,10 @@ def _get_flat_data_for_domain(domain, startdate, enddate, use_blacklist=True):
     configured_users = []
     
     #next, do a query of all the forms in this domain to get an idea of all the usernames
-    defs = FormDefModel.objects.all().filter(domain=domain)
+    if form is not None:
+        defs = [form]
+    else:
+        defs = FormDefModel.objects.all().filter(domain=domain)
     user_date_hash = {}
     
     for fdef in defs:
@@ -170,7 +174,49 @@ def _get_catch_all_email_text(domain, startdate, enddate):
     context['enddate'] = enddate
     context['results'] = data
     return render_to_string("hq/reports/email_hierarchy_report.txt", context)
-    
+
+def follow_up_report(report_schedule, run_frequency):
+    '''A report that shows, per user, how many forms were submitted over
+       time, for a single domain (the domain of the associated user)'''
+    domains = Domain.active_for_user(report_schedule.recipient_user)
+    title = "Follow Up Report - %s" % (", ".join([domain.name for domain in domains]))
+
+    rendered_text = ''
+    from hq import reporter
+    # DAN HACK: everyone wants the daily reports to show the last week's worth of data
+    # so change this
+    if run_frequency == 'daily':
+        run_frequency='weekly'
+    (startdate, enddate) = reporter.get_daterange(run_frequency)
+
+    for domain in domains:
+        try:
+            rendered_text += _get_form_report_email_text(domain, startdate, enddate, form_name="schema_dodoma_brac_chp_homevisit_followup_12")
+        except FormDefModel.DoesNotExist:
+            # if form doesn't exist for a given domain, that's fine, ignore it
+            pass
+
+    if report_schedule.report_delivery == 'email':
+        usr = report_schedule.recipient_user
+        subject = "[CommCare HQ] %s report %s - %s :: %s" %\
+                    (run_frequency, startdate.strftime('%m/%d/%Y'),
+                     enddate.strftime('%m/%d/%Y'), title)
+        reporter.transport_email(rendered_text, usr, params={"startdate":startdate,"enddate":enddate,"email_subject":subject})
+    return
+
+def _get_form_report_email_text(domain, startdate, enddate, form_name):
+    forms = FormDefModel.objects.all().filter(domain=domain)
+    form = forms.get(form_name__icontains=form_name)
+    data = _get_flat_data_for_domain(domain, startdate, enddate, True, form)
+    context = {}
+    heading = "%s Report on Follow-Up Visits: %s - %s" % (domain, startdate.strftime('%m/%d/%Y'), enddate.strftime('%m/%d/%Y'))
+    context['report_heading'] = heading
+    context['daterange_header'] = repinspector.get_daterange_header(startdate, enddate, add_total=True)
+    context['startdate'] = startdate
+    context['enddate'] = enddate
+    context['results'] = data
+    return render_to_string("hq/reports/email_hierarchy_report.txt", context)
+
 
 def pf_swahili_sms(report_schedule, run_frequency):
     """ 
@@ -224,7 +270,6 @@ def admin_per_form_report(report_schedule, run_frequency):
     fulltext = ''
     for fdef in defs:
         report_payload = repinspector.get_report_as_tuples_filtered(hierarchy, [fdef], startdate, enddate, 0)
-        print "doing report for: " + str(fdef)
         if transport == 'email':
             do_separate = True
             params = {}
@@ -306,7 +351,7 @@ def provider_summary(report_schedule, run_frequency):
     # this is a hack to ensure that the monthly reports are sent on the last day of the month
     today = datetime.now().date()
     tomorrow = today + timedelta(days=1)
-    case = Case.objects.get(name="Pathfinder_1")
+    case = Case.objects.get(name=PATHFINDER_REPORT_CASE_NAME)
     blacklist = BlacklistedUser.for_domain(case.domain)
     # if it's the last day of the month then send the report
     if tomorrow.day == 1:
@@ -324,7 +369,7 @@ def provider_summary(report_schedule, run_frequency):
                     
                     output = StringIO()
                     doc = SimpleDocTemplate(output)
-                    data_list = get_provider_data_by_case("Pathfinder_1", 
+                    data_list = get_provider_data_by_case(PATHFINDER_REPORT_CASE_NAME, 
                                                           provider, startdate, 
                                                           enddate)
                     get_provider_summary_pdf(startdate.month, startdate.year, 
