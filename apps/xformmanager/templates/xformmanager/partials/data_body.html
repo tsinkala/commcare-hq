@@ -58,8 +58,8 @@
     {% for record in data.object_list %}
     <tr class="{% cycle 'odd' 'even' %}">
        <td>
-           <input type="hidden" name="instance" value="{{record|first}}"/>
-           <input type="checkbox" name="checked_{{record|first}}"/>
+           <input type="hidden" name="instance" value="{{record|array_lookup:2}}"/>
+           <input type="checkbox" name="checked_{{record|array_lookup:2}}"/>
        </td>
        {% for field in record %}
            {% ifequal forloop.counter0 sort_index %}
