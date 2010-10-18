@@ -48,7 +48,7 @@ def ota_restore(request):
         return HttpResponse("<error>Attachment not found: %s</error>" % pu[0].attachment_id, mimetype="text/xml")
         
 
-    atts = Metadata.objects.filter(username=username)        
+    atts = Metadata.objects.filter(username=username).filter(formdefmodel__domain=pu[0].phone.domain)
 
     for a in atts:
         path = a.attachment.filepath
