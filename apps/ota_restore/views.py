@@ -23,12 +23,14 @@ def ota_restore(request):
     cases_list = {}
         
     try:
-        pu = PhoneUserInfo.objects.filter(username=username).filter(attachment__isnull=False)
+        pu = PhoneUserInfo.objects.filter(username=username).filter(attachment__isnull=False).order_by('user')
         
-        if len(pu) > 1:
-            return HttpResponse("<error>Username '%s' attached to multiple phones</error>" % username, mimetype="text/xml")
+        # Ultimately, usernames (by domain?) should be unique, so we will return this part of the code.
+        # For now, we do have phones in the filed with duplicate usernames in one domain, so we'll accept this corner case.
+        # if len(pu) > 1:
+        #    return HttpResponse("<error>Username '%s' attached to multiple phones</error>" % username, mimetype="text/xml")
 
-        elif len(pu) < 1:
+        if len(pu) < 1:
             return HttpResponse("<error>No phone linked to username '%s'</error>" % username, mimetype="text/xml")
         
         # OK, go on.
