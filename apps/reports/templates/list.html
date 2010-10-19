@@ -13,7 +13,14 @@
         <li><a href="{% url reports.views.custom_report user.selected_domain.id report.name %}">{{ report.display_name }}</a></li>
     {% endfor %}
     </ul>
-    </div>
+	{# obviously this is a hack. but the code is about to be rewritten anyway, and Gayo needs to have it ASAP, it'll do #}
+	
+	{% ifequal user.selected_domain.name "path" %}
+	<ul>
+		<li><a href="{% url reports.views_path.facilities %}">Facility Reports</a></li>
+	</ul>
+	{% endifequal %}
+
 {% endif %}
 {% if case_reports %}
     <h2>Data Export Reports for {{user.selected_domain}}</h2>
