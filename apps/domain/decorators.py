@@ -3,6 +3,8 @@ from django.core.urlresolvers import reverse
 from django.http import HttpResponseRedirect
 from django.utils.http import urlquote
 
+from domain.util import add_domain_to_user
+
 ########################################################################################################
 
 REDIRECT_FIELD_NAME = 'next'
@@ -179,6 +181,26 @@ def domain_admin_required_ex( redirect_page_name = None ):
 
 # Parallel to what we did with login_and_domain_required, above
 domain_admin_required = domain_admin_required_ex()
+
+########################################################################################################
+
+
+########################################################################################################
+
+def add_domain_to_request(function):
+    def _dec(view_func): 
+        def _view(request, *args, **kwargs):
+            request = add_domain_to_user(request)
+            return view_func(request, *args, **kwargs)
+
+
+        _view.__name__ = view_func.__name__
+        _view.__dict__ = view_func.__dict__
+        _view.__doc__ = view_func.__doc__
+        _view.__module__ = view_func.__module__
+              
+        return _view
+    return _dec(function)
 
 ########################################################################################################
     
