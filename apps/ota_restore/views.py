@@ -7,7 +7,8 @@ import os
 import settings
 import time, datetime
 
-from django_digest.decorators import *
+from django_digest.decorators import httpdigest
+from domain.decorators import add_domain_to_request
 
 from xml.dom.minidom import parse, parseString
 from receiver.models import Submission, Attachment
@@ -16,6 +17,7 @@ from phone.models import PhoneUserInfo
 
     
 @httpdigest
+@add_domain_to_request
 def ota_restore(request):
     username = request.user.username
     # username = 'derik'
@@ -94,6 +96,7 @@ def ota_restore(request):
     
     
 @httpdigest
+@add_domain_to_request
 def digest_test(request):
     # just for testing
     xml = '''<restoredata>
