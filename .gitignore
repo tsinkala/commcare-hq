@@ -12,4 +12,3 @@ bad/*
 rapidsms-django.log*
 rapidsms.log*
 data/*
-apps/releasemanager/DimagiKeyStore
