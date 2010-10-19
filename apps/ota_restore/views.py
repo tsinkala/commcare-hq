@@ -25,7 +25,8 @@ def ota_restore(request):
     cases_list = {}
         
     try:
-        pu = PhoneUserInfo.objects.filter(username=username).filter(attachment__isnull=False).order_by('user')
+        pu = PhoneUserInfo.objects.filter(username=username).filter(attachment__isnull=False)
+        pu = pu.filter(phone__domain=request.user.selected_domain).order_by('user')
         
         # Ultimately, usernames (by domain?) should be unique, so we will return this part of the code.
         # For now, we do have phones in the filed with duplicate usernames in one domain, so we'll accept this corner case.
