@@ -22,9 +22,8 @@ try:
     from reports.schemas import SchemaPathPathChwTbHivPathStartCpt2 as StartCpt
     
 except ImportError: # because perhaps the Schema file isn't up to date
-    from sys import exit
-    exit()
-
+    # the script still would throw an error, but not shut down the server. important since dev DB != staging DB, and both have users relying on.
+    pass
     
 @require_domain('path')
 def index(request):
