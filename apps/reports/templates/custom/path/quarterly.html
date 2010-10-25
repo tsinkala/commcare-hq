@@ -1,0 +1,304 @@
+{% extends base_template %}
+{% load i18n %}
+{% block title %}Reports for {{user.selected_domain}}{% endblock %}
+
+{% block page_stylesheets %}
+    <link type="text/css" rel="stylesheet" href="/static/reports/stylesheets/style.css" />
+	
+	<style>
+		table { 
+			border-width: 0px; 
+		}
+		th { 
+			background-color: #F7F499;
+			width: 100%;
+		}
+		.oddrow {
+			background-color:#f8f8f8;
+		}
+		
+		.data table{
+			border: 1px solid black;
+		}
+		.data th{
+			border: 1px solid black;
+			text-align: center;
+		}
+		.data td{
+			border: 1px solid black;
+			text-align: center;
+		}
+	</style>
+	
+{% endblock %}
+
+{% block content %}
+
+<script type="text/javascript">
+$(function(){
+  $("table#report tr:even").addClass("oddrow");
+});
+</script>
+
+<div style="text-align: center;">
+	<h1>
+		PATH TANZANIA &nbsp; &nbsp; &nbsp; 
+		<img src="/static/reports/path_logo.png" />
+	</h1>
+</div>
+<br />
+<h3 style="text-align: center">QUARTERLY TB/HIV NOTIFICATION REPORT</h3>
+<p style="text-align: center"><strong>{% now "d M Y" %}</strong></h3>
+
+
+<p>
+	<a href="{% url reports.views_path.index %}">&lt;&lt;&lt; Back to Index </a>
+</p>
+
+<table>
+	<tr>
+		<td><strong>Facility Name</strong> {{ facility.path_case_create_case_name }}</td>
+		<td><strong>Ownership</strong> {{ facility.path_case_update_ownership }}</td>
+	</tr>
+	<tr>
+		<td><b>Region</b> {{ facility.path_case_update_region }}</td>
+		<td>&nbsp;</td>
+	</tr>
+	<tr>
+		<td><b>District</b> {{ facility.path_case_update_district }}</td>
+		<td><strong>Facility code</strong> {{ facility.path_facility_id }}</td>
+	</tr>
+	<tr>
+		<td><strong>Notifications during quarter</strong> {{ report.quarter }} </td>
+		<td>&nbsp;</td>
+	</tr>
+	<tr>
+		<td><strong>Date prepared</strong> {{ report.meta_timeend|date:"d M Y" }}</td>
+		<td>&nbsp;</td>
+	</tr>
+</table>
+
+<table class="data">
+	<tr>
+		<th rowspan="2">Category of TB Patients</th>
+		<th colspan="2">No. of all TB patients</th>
+		<th colspan="2">No. Offered DCT</th>
+		<th colspan="2">No. Tested for HIV</th>
+		<th colspan="2">No. HIV Positive</th>
+		<th colspan="2">No. Ref to CTC</th>
+		<th colspan="2">No. Reg HIV Care</th>
+		<th colspan="2">No. Start ART</th>
+		<th colspan="2">No. Start CPT</th>
+	</tr>
+
+	<tr>
+		<td>Male</td>
+		<td>Female</td>
+		<td>Male</td>
+		<td>Female</td>
+		<td>Male</td>
+		<td>Female</td>
+		<td>Male</td>
+		<td>Female</td>
+		<td>Male</td>
+		<td>Female</td>
+		<td>Male</td>
+		<td>Female</td>
+		<td>Male</td>
+		<td>Female</td>
+		<td>Male</td>
+		<td>Female</td>
+	</tr>
+	
+	<tr>
+		<td colspan="17" bgcolor="#eee"><strong>Facility Based</strong></td>
+	</tr>	
+	<tr>
+		<td><strong>New SS+ Patients</strong></td>
+		<td>{{ tb.facility_based_ss_patients_male }}</td>
+		<td>{{ tb.facility_based_ss_patients_female }}</td>
+		<td>{{ dct.facility_based_ss_patients_male }}</td>
+		<td>{{ dct.facility_based_ss_patients_female }}</td>
+		<td>{{ hivt.facility_based_ss_patients_male }}</td>
+		<td>{{ hivt.facility_based_ss_patients_female }}</td>
+		<td>{{ hivp.facility_based_ss_patients_male }}</td>
+		<td>{{ hivp.facility_based_ss_patients_female }}</td>
+		<td>{{ ctc.facility_based_ss_patients_male }}</td>
+		<td>{{ ctc.facility_based_ss_patients_female }}</td>
+		<td>{{ hivc.facility_based_ss_patients_male }}</td>
+		<td>{{ hivc.facility_based_ss_patients_female }}</td>
+		<td>{{ sart.facility_based_ss_patients_male }}</td>
+		<td>{{ sart.facility_based_ss_patients_female }}</td>
+		<td>{{ scpt.facility_based_ss_patients_male }}</td>
+		<td>{{ scpt.facility_based_ss_patients_female }}</td>
+	</tr>
+	<tr>
+		<td><strong>Others</strong></td>
+		<td>{{ tb.facility_based_other_patients_male }}</td>
+		<td>{{ tb.facility_based_other_patients_female }}</td>
+		<td>{{ dct.facility_based_other_patients_male }}</td>
+		<td>{{ dct.facility_based_other_patients_female }}</td>
+		<td>{{ hivt.facility_based_other_patients_male }}</td>
+		<td>{{ hivt.facility_based_other_patients_female }}</td>
+		<td>{{ hivp.facility_based_other_patients_male }}</td>
+		<td>{{ hivp.facility_based_other_patients_female }}</td>
+		<td>{{ ctc.facility_based_other_patients_male }}</td>
+		<td>{{ ctc.facility_based_other_patients_female }}</td>
+		<td>{{ hivc.facility_based_other_patients_male }}</td>
+		<td>{{ hivc.facility_based_other_patients_female }}</td>
+		<td>{{ sart.facility_based_other_patients_male }}</td>
+		<td>{{ sart.facility_based_other_patients_female }}</td>
+		<td>{{ scpt.facility_based_other_patients_male }}</td>
+		<td>{{ scpt.facility_based_other_patients_female }}</td>
+	</tr>
+
+	<tr>
+		<td colspan="17" bgcolor="#eee"><strong>Home Based</strong></td>
+	</tr>	
+	<tr>
+		<td><strong>New SS+ Patients</strong></td>
+		<td>{{ tb.home_based_ss_patients_male }}</td>
+		<td>{{ tb.home_based_ss_patients_female }}</td>
+		<td>{{ dct.home_based_ss_patients_male }}</td>
+		<td>{{ dct.home_based_ss_patients_female }}</td>
+		<td>{{ hivt.home_based_ss_patients_male }}</td>
+		<td>{{ hivt.home_based_ss_patients_female }}</td>
+		<td>{{ hivp.home_based_ss_patients_male }}</td>
+		<td>{{ hivp.home_based_ss_patients_female }}</td>
+		<td>{{ ctc.home_based_ss_patients_male }}</td>
+		<td>{{ ctc.home_based_ss_patients_female }}</td>
+		<td>{{ hivc.home_based_ss_patients_male }}</td>
+		<td>{{ hivc.home_based_ss_patients_female }}</td>
+		<td>{{ sart.home_based_ss_patients_male }}</td>
+		<td>{{ sart.home_based_ss_patients_female }}</td>
+		<td>{{ scpt.home_based_ss_patients_male }}</td>
+		<td>{{ scpt.home_based_ss_patients_female }}</td>
+	</tr>
+	<tr>
+		<td><strong>Others</strong></td>
+		<td>{{ tb.home_based_other_patients_male }}</td>
+		<td>{{ tb.home_based_other_patients_female }}</td>
+		<td>{{ dct.home_based_other_patients_male }}</td>
+		<td>{{ dct.home_based_other_patients_female }}</td>
+		<td>{{ hivt.home_based_other_patients_male }}</td>
+		<td>{{ hivt.home_based_other_patients_female }}</td>
+		<td>{{ hivp.home_based_other_patients_male }}</td>
+		<td>{{ hivp.home_based_other_patients_female }}</td>
+		<td>{{ ctc.home_based_other_patients_male }}</td>
+		<td>{{ ctc.home_based_other_patients_female }}</td>
+		<td>{{ hivc.home_based_other_patients_male }}</td>
+		<td>{{ hivc.home_based_other_patients_female }}</td>
+		<td>{{ sart.home_based_other_patients_male }}</td>
+		<td>{{ sart.home_based_other_patients_female }}</td>
+		<td>{{ scpt.home_based_other_patients_male }}</td>
+		<td>{{ scpt.home_based_other_patients_female }}</td>
+	</tr>
+
+	<tr>
+		<td colspan="17" bgcolor="#eee"><strong>TOTAL</strong></td>
+	</tr>	
+	<tr>
+		<td><strong>New SS+ Patients</strong></td>
+		<td></td>
+		<td></td>
+		<td>{{ dct.total_ss_patients_male }}</td>
+		<td>{{ dct.total_ss_patients_female }}</td>
+		<td>{{ hivt.total_ss_patients_male }}</td>
+		<td>{{ hivt.total_ss_patients_female }}</td>
+		<td>{{ hivp.total_ss_patients_male }}</td>
+		<td>{{ hivp.total_ss_patients_female }}</td>
+		<td>{{ ctc.total_ss_patients_male }}</td>
+		<td>{{ ctc.total_ss_patients_female }}</td>
+		<td>{{ hivc.total_ss_patients_male }}</td>
+		<td>{{ hivc.total_ss_patients_female }}</td>
+		<td>{{ sart.total_ss_patients_male }}</td>
+		<td>{{ sart.total_ss_patients_female }}</td>
+		<td>{{ scpt.total_ss_patients_male }}</td>
+		<td>{{ scpt.total_ss_patients_female }}</td>
+	</tr>
+	<tr>
+		<td><strong>Others</strong></td>
+		<td></td>
+		<td></td>
+		<td>{{ dct.total_other_patients_male }}</td>
+		<td>{{ dct.total_other_patients_female }}</td>
+		<td>{{ hivt.total_other_patients_male }}</td>
+		<td>{{ hivt.total_other_patients_female }}</td>
+		<td>{{ hivp.total_other_patients_male }}</td>
+		<td>{{ hivp.total_other_patients_female }}</td>
+		<td>{{ ctc.total_other_patients_male }}</td>
+		<td>{{ ctc.total_other_patients_female }}</td>
+		<td>{{ hivc.total_other_patients_male }}</td>
+		<td>{{ hivc.total_other_patients_female }}</td>
+		<td>{{ sart.total_other_patients_male }}</td>
+		<td>{{ sart.total_other_patients_female }}</td>
+		<td>{{ scpt.total_other_patients_male }}</td>
+		<td>{{ scpt.total_other_patients_female }}</td>
+	</tr>
+	<tr>
+		<td><strong>Grand Total</strong></td>
+		<td colspan="2"></td>
+		<td colspan="2">{{ dct.grand_total }}</td>
+		<td colspan="2">{{ hivt.grand_total }}</td>
+		<td colspan="2">{{ hivp.grand_total }}</td>
+		<td colspan="2">{{ ctc.grand_total }}</td>
+		<td colspan="2">{{ hivc.grand_total }}</td>
+		<td colspan="2">{{ sart.grand_total }}</td>
+		<td colspan="2">{{ scpt.grand_total }}</td>
+	</tr>
+
+	<tr>
+		<td colspan="17" bgcolor="#eee">&nbsp;</td>
+	</tr>	
+
+	<tr>
+		<th style="color: red" colspan="9"><strong>Age Category</strong></th>
+		<th colspan="2" style="color: red">TOTAL</th>
+	</tr>
+
+	<tr>
+		<td><strong>Age&lt;15</strong></td>
+		<td>{{ tb.age_category_under_15_male }}</td>
+		<td>{{ tb.age_category_under_15_female }}</td>
+		<td>{{ dct.age_category_under_15_male }}</td>
+		<td>{{ dct.age_category_under_15_female }}</td>
+		<td>{{ hivt.age_category_under_15_male }}</td>
+		<td>{{ hivt.age_category_under_15_female }}</td>
+		<td>{{ hivp.age_category_under_15_male }}</td>
+		<td>{{ hivp.age_category_under_15_female }}</td>
+		<td colspan="2" bgcolor="#fdff00"> {{ total_under_15 }} </td>
+	</tr>
+
+	<tr>
+		<td><strong>15 and Above</strong></td>
+		<td>{{ tb.age_category_above_15_male }}</td>
+		<td>{{ tb.age_category_above_15_female }}</td>
+		<td>{{ dct.age_category_above_15_male }}</td>
+		<td>{{ dct.age_category_above_15_female }}</td>
+		<td>{{ hivt.age_category_above_15_male }}</td>
+		<td>{{ hivt.age_category_above_15_female }}</td>
+		<td>{{ hivp.age_category_above_15_male }}</td>
+		<td>{{ hivp.age_category_above_15_female }}</td>
+		<td colspan="2" bgcolor="#fdff00">{{ total_over_15 }}</td>
+	</tr>
+
+	<tr bgcolor="#f6c490">
+		<td><strong>TOTAL</strong></td>
+		<td> {{ tb.male_total }}</td>
+		<td> {{ tb.female_total }}</td>
+		<td> {{ dct.male_total }}</td>
+		<td> {{ dct.female_total }}</td>
+		<td> {{ hivt.male_total }}</td>
+		<td> {{ hivt.female_total }}</td>
+		<td> {{ hivp.male_total }}</td>
+		<td> {{ hivp.female_total }}</td>
+		<td colspan="2"><strong>{{ total_total }}</strong></td>
+	</tr>
+
+</table>
+
+<p>
+	<a href="{% url reports.views_path.index %}">&lt;&lt;&lt; Back to Index </a>
+</p>
+
+{% endblock %}
