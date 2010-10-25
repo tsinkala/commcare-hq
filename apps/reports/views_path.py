@@ -16,11 +16,12 @@ try:
     from reports.schemas import SchemaPathPathChwTbHivPathRefCtc2 as CtcTested
     from reports.schemas import SchemaPathPathChwTbHivPathTestedHiv2 as HivTested
     from reports.schemas import SchemaPathPathChwTbHivPathNumHivPositive2 as HivPositive
-    from reports.schemas import SchemaPathPathChwTbHivPathNumRegistered2 as TbRegistered
     from reports.schemas import SchemaPathPathChwTbHivPathHivCare2 as HivCare
     from reports.schemas import SchemaPathPathChwTbHivPathStartArt2 as StartArt
     from reports.schemas import SchemaPathPathChwTbHivPathStartCpt2 as StartCpt
-    
+
+    # from reports.schemas import ??? as TbRegistered # <- uncomment once the right table is found
+
 except ImportError: # because perhaps the Schema file isn't up to date
     # the script still would throw an error, but not shut down the server. important since dev DB != staging DB, and both have users relying on.
     pass
@@ -80,8 +81,7 @@ def quarterly(request, report_id):
     hivc= get_object_or_404(HivCare,    parent_id = report.id)
     sart= get_object_or_404(StartArt, parent_id = report.id)
     scpt= get_object_or_404(StartCpt, parent_id = report.id)
-    
-    # tb  = get_object_or_404(TbRegistered,  parent_id = report.id)
+    # tb  = get_object_or_404(TbRegistered,  parent_id = report.id) # <- uncomment when TB is fixed
     
     # get quarter
     report.quarter = ("Jan-Mar", "Apr-Jun", "Jul-Sep", "Oct-Dec")[(int(report.meta_timeend.strftime("%m")) - 1) / 3]
@@ -89,7 +89,7 @@ def quarterly(request, report_id):
     # because the xform totals are broken
     # and django templates, thanks their lame design, cant do arithmetics
 
-    for i in [dct, hivt, hivp, ctc, hivc, sart, scpt]:
+    for i in [dct, hivt, hivp, ctc, hivc, sart, scpt]: # <- add 'tb' when fixed
         i.total_ss_patients_male = i.facility_based_ss_patients_male + i.home_based_ss_patients_male
         i.total_ss_patients_female = i.facility_based_ss_patients_female + i.home_based_ss_patients_female
         i.total_other_patients_male = i.facility_based_other_patients_male + i.home_based_other_patients_male
@@ -97,13 +97,10 @@ def quarterly(request, report_id):
         
         i.grand_total = i.total_ss_patients_male + i.total_ss_patients_female + i.total_other_patients_male + i.total_other_patients_female
         
-    
-    for i in [dct, hivt, hivp]:
+    for i in [dct, hivt, hivp]: # <- add 'tb' when fixed
         i.male_total = i.age_category_under_15_male + i.age_category_above_15_male
         i.female_total = i.age_category_under_15_female + i.age_category_above_15_female
     
-    
-
     # Age totals. These aren't in the xforms AFAIK so will remain here even when they are fixed    
     total_under_15 =dct.age_category_under_15_male + hivp.age_category_under_15_male + hivt.age_category_under_15_male + \
                     dct.age_category_under_15_female + hivp.age_category_under_15_female + hivt.age_category_under_15_female
@@ -123,7 +120,7 @@ def quarterly(request, report_id):
                                                                     "hivc"  : hivc,
                                                                     "sart"  : sart,
                                                                     "scpt"  : scpt,
-                                                                    # "tb"    : tb
+                                                                    # "tb"    : tb, # <- uncomment when TB fixed
                                                                     
                                                                     "total_under_15": total_under_15,
                                                                     "total_over_15" : total_over_15,

@@ -199,8 +199,8 @@ $(function(){
 	</tr>	
 	<tr>
 		<td><strong>New SS+ Patients</strong></td>
-		<td></td>
-		<td></td>
+		<td>{{ tb.total_ss_patients_male }}</td>
+		<td>{{ tb.total_ss_patients_female }}</td>
 		<td>{{ dct.total_ss_patients_male }}</td>
 		<td>{{ dct.total_ss_patients_female }}</td>
 		<td>{{ hivt.total_ss_patients_male }}</td>
@@ -218,8 +218,8 @@ $(function(){
 	</tr>
 	<tr>
 		<td><strong>Others</strong></td>
-		<td></td>
-		<td></td>
+		<td>{{ tb.total_other_patients_male }}</td>
+		<td>{{ tb.total_other_patients_female }}</td>
 		<td>{{ dct.total_other_patients_male }}</td>
 		<td>{{ dct.total_other_patients_female }}</td>
 		<td>{{ hivt.total_other_patients_male }}</td>
@@ -237,7 +237,7 @@ $(function(){
 	</tr>
 	<tr>
 		<td><strong>Grand Total</strong></td>
-		<td colspan="2"></td>
+		<td colspan="2">{{ tb.grand_total }}</td>
 		<td colspan="2">{{ dct.grand_total }}</td>
 		<td colspan="2">{{ hivt.grand_total }}</td>
 		<td colspan="2">{{ hivp.grand_total }}</td>
