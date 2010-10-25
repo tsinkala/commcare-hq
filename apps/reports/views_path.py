@@ -114,7 +114,7 @@ def quarterly(request, report_id):
 
     total_total = total_over_15 + total_under_15
     
-    return render_to_response(request, "custom/path/tb_hiv.html", { 
+    return render_to_response(request, "custom/path/quarterly.html", { 
                                                                     "facility"  : facility,
                                                                     "report"    : report,
                                                                     "dct"   : dct,
