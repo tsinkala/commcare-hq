@@ -44,6 +44,9 @@ class ClinicVisit(models.Model):
     clinic = models.ForeignKey(Clinic)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def __unicode__(self):
+        return "%s:%s:%s" % (self.mother_name, self.clinic, self.chw_name)
+
     class Meta:
         unique_together = ('mother_name', 'chw_name', 'chw_case_id')
 
