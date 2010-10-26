@@ -13,16 +13,16 @@
 				<td>&nbsp;</td>
 				<td>Registrations</td>
 				<td>Hi Risk</td>
-				<td>Followed Up</td>
 				<td>Visits</td>
+				<td>Followed Up</td>
 			</tr>
 			{% for clinic in clinics %}
 				<tr>
 					<td>{{ clinic.name }}</td>
 					<td>{{ clinic.reg }}</td>
 					<td>{{ clinic.hi_risk }}</td>					
-					<td>{{ clinic.follow }}</td>
 					<td>{{ clinic.visits }}</td>
+					<td>{{ clinic.follow }}</td>
 				</tr>
 			{% endfor %}
 			
