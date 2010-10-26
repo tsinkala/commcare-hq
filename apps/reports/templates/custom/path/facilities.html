@@ -36,8 +36,9 @@ $(function(){
 
 <table id="report">
 	<tr>
-		<th style="width: 75%"><b>Facility Name</b> (<tt>#ID</tt>)</th>
-		<th>Supervisor Report Date</th>
+		<th style="width: 50%"><b>Facility Name</b> (<tt>#ID</tt>)</th>
+		<th style="width: 25%">&nbsp;</th>
+		<th style="width: 25%">Supervisor Report Date</th>
 	</tr>
 
 	{% for case_id, f in facilities.items %}
@@ -45,9 +46,18 @@ $(function(){
 		<td><b>{{ f.path_case_create_case_name }}</b> (<tt>#{{ f.path_facility_id }}</tt>)</td>
 		<td> 
 			&nbsp;
+			{% if f.report %}
+				<a href="{% url reports.views_path.quarterly f.report.id %}">
+					Quarterly Report
+				</a>
+			{% endif %}
+		</td>
+		<td> 
+			&nbsp;
 			{% if f.checklist %}
 				<a href="{% url reports.views_path.facility f.checklist.id %}">
-					{{ f.checklist.path_supervision_date|date:"d M Y" }}
+					Supervision Report
+					{# f.checklist.path_supervision_date|date:"d M Y" #}
 				</a>
 			{% endif %}
 		</td>

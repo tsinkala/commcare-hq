@@ -21,6 +21,9 @@ urlpatterns = patterns('',
     (r'^reports/(?P<case_id>\d+)/csv/?$', 'reports.views.case_export_csv'),
     (r'^reports/(?P<case_id>\d+)/single/(?P<case_instance_id>.*)/?$', 'reports.views.single_case_view'),
     
+    # PATH reports
+    (r'^reports/path/?$', 'reports.views_path.index'),
+
     (r'^reports/path/facility/(?P<checklist_id>\d+)/?$', 'reports.views_path.facility'),
-    (r'^reports/path/facilities/?$', 'reports.views_path.facilities'),
+    (r'^reports/path/quarterly/(?P<report_id>\d+)/?$', 'reports.views_path.quarterly'),
 )
