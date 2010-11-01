@@ -48,7 +48,11 @@ class ClinicVisit(models.Model):
         return "%s:%s:%s" % (self.mother_name, self.clinic, self.chw_name)
 
     class Meta:
-        unique_together = ('mother_name', 'chw_name', 'chw_case_id')
+        # originally, we assumed that clinic visits would only happen in response to cases/referrals opened
+        # (unique_together = ('mother_name', 'chw_name', 'chw_case_id'))
+        # now, we want to support arbitrary number of clinic visits (say, ANC visits) 
+        # for any registered pregnant woman
+        unique_together = ('mother_name', 'chw_name', 'chw_case_id', 'created_at')
 
 
 def clinic_visits(clinic_id=None, chw_name=None):
@@ -62,7 +66,11 @@ def clinic_visits(clinic_id=None, chw_name=None):
     
     visits = {}
     for v in cv:
-        visits["%s-%s-%s" % (v.mother_name, v.chw_name, v.chw_case_id)] = v
+        key = "%s-%s-%s" % (v.mother_name, v.chw_name, v.chw_case_id)
+        if key in visits:
+            visits[key].append(v)
+        else:
+            visits[key] = [v]
     
     return visits
     

@@ -95,7 +95,7 @@ def report(request, format):
     rows = map(fix_case_id, rows)
     # /fix
     
-    visits = clinic_visits(clinic_id=showclinic, chw_name=filter_chw)
+    all_visits = clinic_visits(clinic_id=showclinic, chw_name=filter_chw)
     
     # finally, pack it up and ship to the template/CSV
     # Django's retarded template language forces this items{} dict,
@@ -106,14 +106,14 @@ def report(request, format):
     for i in rows:
         at = atts[i.id] if atts.has_key(i.id) else None
         try:
-            visit = visits["%s-%s-%s" % (i.sampledata_mother_name, i.meta_username, i.sampledata_case_id)]
+            visits = all_visits["%s-%s-%s" % (i.sampledata_mother_name, i.meta_username, i.sampledata_case_id)]
         except KeyError:
-            visit = False
-        items.append({ "row" : i, "attach" : at, "visit": visit })
+            visits = False
+        items.append({ "row" : i, "attach" : at, "visits": visits })
         
     # filter only mothers who visited the clinic
     if request.GET.has_key('visited'):
-        items = filter(lambda i:i['visit'], items)
+        items = filter(lambda i:i['visits'], items)
 
         
     context['items'] = items   
