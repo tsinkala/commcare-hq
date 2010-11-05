@@ -30,6 +30,7 @@ UNKNOWN_IP = "0.0.0.0"
 
 def rlistdir(start_path, paths=[], prepend='', ignore_hidden=True):
     ''' list dirs recursively '''
+    paths = []
     
     for f in os.listdir(start_path):
         if ignore_hidden and f.startswith('.'): continue
