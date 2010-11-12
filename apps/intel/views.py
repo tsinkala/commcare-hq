@@ -126,7 +126,7 @@ def report(request, format):
         csv = 'Mother Name,Address,Hi Risk?,Visited Clinic?,Follow up?,Most Recent Follow Up\n'
         for i in items:
             row = i['row']
-            visited = i['visit'].created_at.strftime('%B %d, %Y') if i['visit'] else "No"
+            visited = i['visits'][-1].created_at.strftime('%B %d, %Y') if i['visits'] else "No"
             msg = i['attach'].most_recent_annotation() if i['attach'] is not None else ""
             if msg is None:
                 follow = "no"
