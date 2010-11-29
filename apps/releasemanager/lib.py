@@ -43,7 +43,7 @@ def rlistdir(start_path, paths=[], prepend='', ignore_hidden=True):
     return paths
 
 
-def add_to_jar(jar_file, path_to_add):
+def add_to_jar(jar_file, path_to_add, application_name=''):
     '''adds files under /path_to_add to jar_file, return path to the new JAR'''
     if not os.path.isdir(path_to_add):
         raise "Trying to add non-existant directory '%s' to JAR" % str(path_to_add)
@@ -65,6 +65,30 @@ def add_to_jar(jar_file, path_to_add):
         full_path = os.path.join(path_to_add, f)
         if os.path.isdir(full_path): continue
         newjar.write(full_path, str(f))
+
+    # Now update the application name in the manifest if relevant
+    if application_name is not '':
+        #Define the location of the manifest in either jar
+        manifest_loc = os.path.join("META-INF","MANIFEST.MF")
+
+        #Turn the manifest into a dictionary
+        manifestdata = jad_to_dict(oldjar.read(manifest_loc))
+
+        #Rewrite the midlet name
+        manifestdata['MIDlet-Name'] = application_name
+
+        #Retrieve the midlet definition string
+        #midletdef = manifestdata['MIDlet-1']
+
+        #Rewrite def string to use new midlet name
+        #manifestdata['MIDlet-1'] = application_name + midletdef[midletdef.find(','):]
+
+        #Blobify
+        manifest_file = dict_to_jad(manifestdata)
+
+        #Write to new jar
+        newjar.writestr(manifest_loc, manifest_file)
+
         
     # now add the JAR files, taking care not to add filenames that already exist in the resource set
     existing_files = newjar.namelist()
@@ -89,6 +113,13 @@ def jad_to_dict(jad_contents):
     
     return jad
 
+def dict_to_jad(jad_dict):
+    # create new JAD data blob
+    new_content = ''
+    for i in jad_dict:
+        if jad_dict[i] is not None:
+            new_content += "%s: %s\n" % (i, jad_dict[i])
+    return new_content
 
 def modify_jad(jad_file, modify_dict):
     ''' 
@@ -101,10 +132,7 @@ def modify_jad(jad_file, modify_dict):
         jad[i] = modify_dict[i]
 
     # create new JAD
-    new_content = ''
-    for i in jad:
-        if jad[i] is not None:
-            new_content += "%s: %s\n" % (i, jad[i])
+    new_content = dict_to_jad(jad)
 
     f = open(jad_file, 'w')
     f.write(new_content)

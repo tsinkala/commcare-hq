@@ -332,7 +332,7 @@ def _create_build(request, build):
     if not os.path.isdir(new_path):
         os.makedirs(new_path)
 
-    new_tmp_jar = lib.add_to_jar(jar, resources)    
+    new_tmp_jar = lib.add_to_jar(jar, resources, buildname_slug)    
     new_jar = str(os.path.join(new_path, "%s.jar" % buildname_slug))
     shutil.copy2(new_tmp_jar, new_jar)
 
@@ -341,6 +341,7 @@ def _create_build(request, build):
     lib.modify_jad(new_jad, {
                                 'MIDlet-Jar-Size' : os.path.getsize(new_jar), 
                                 'MIDlet-Jar-URL' : os.path.basename(new_jar),
+                                'MIDlet-Name'    : buildname_slug
                              })
 
     # # if "staging.commcarehq" in request.get_host().lower() or "localhost" in request.get_host().lower():
