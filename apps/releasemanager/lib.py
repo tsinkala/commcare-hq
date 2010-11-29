@@ -77,12 +77,6 @@ def add_to_jar(jar_file, path_to_add, application_name=''):
         #Rewrite the midlet name
         manifestdata['MIDlet-Name'] = application_name
 
-        #Retrieve the midlet definition string
-        #midletdef = manifestdata['MIDlet-1']
-
-        #Rewrite def string to use new midlet name
-        #manifestdata['MIDlet-1'] = application_name + midletdef[midletdef.find(','):]
-
         #Blobify
         manifest_file = dict_to_jad(manifestdata)
 
