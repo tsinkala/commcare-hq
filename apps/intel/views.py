@@ -54,6 +54,9 @@ def report(request, format):
     # hi risk view?
     hi_risk_only = request.path.replace(".%s" % format, '').endswith('/risk')
     context['page'] = 'risk' if hi_risk_only else 'all' 
+    
+    # followup view?
+    followup_only = True if (request.GET.has_key('follow') and request.GET['follow'] == 'yes') else False
         
     if request.GET.has_key('meta_username'):
         showclinic = None
@@ -62,8 +65,8 @@ def report(request, format):
         else:
             context['title'] = "Cases Entered by %s" % request.GET['meta_username']
         
-        if request.GET.has_key('follow') and request.GET['follow'] == 'yes':
-            context['title'] += ", Followed Up"
+        if followup_only:
+            context['title'] += " and Followed Up"
 
     # filter by CHW name
     filter_chw = request.GET['meta_username'] if request.GET.has_key('meta_username') else None
@@ -71,6 +74,9 @@ def report(request, format):
     
     rows = registrations().filter(meta_username__in=chws).order_by('sampledata_mother_name')
     if hi_risk_only: rows = rows.filter(sampledata_hi_risk='yes')
+    if followup_only: 
+        mothers_followed_up = follow_up().filter(meta_username__in=chws).values_list('safe_pregnancy_case_case_id', flat=True)
+        rows = rows.filter(sampledata_case_case_id__in=mothers_followed_up)
             
     # filter by a specific risk indicator (for links from the HQ view "High Risk" page)
     if request.GET.has_key('filter'):

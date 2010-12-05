@@ -85,7 +85,7 @@ def hi_risk():
     return IntelGrameenMotherRegistration.objects.exclude(meta_username='admin').filter(sampledata_hi_risk="yes")
 
 def follow_up():
-    return IntelGrameenSafeMotherhoodFollowup.objects.all()
+    return IntelGrameenSafeMotherhoodFollowup.objects.exclude(meta_username='admin')
 
 
 # this is because we don't use foreign keys properly. 
