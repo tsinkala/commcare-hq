@@ -202,10 +202,13 @@ def mother_details(request):
     if follow_ups:
         attrs = []
         for attr in dir(follow_ups[0]):
-            if attr.startswith("safe_pregnancy_") and not attr.startswith("safe_pregnancy_case_"):
+            if attr.startswith("safe_pregnancy_case_update_pregnancy_actions_"):
+                attrs.append(attr)
+            elif attr.startswith("safe_pregnancy_") \
+              and not attr.startswith("safe_pregnancy_case_") \
+              and not attr.startswith("safe_pregnancy_preg_actions_"):
                 attrs.append(attr)
         context['follow_ups_attrs'] = attrs
-        
     # get attachment ID for SMS Sending UI
     atts = attachments_for(REGISTRATION_TABLE)
     context['attach_id'] = atts[mom.id].id

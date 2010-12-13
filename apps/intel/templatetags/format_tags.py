@@ -28,4 +28,4 @@ def attr_name(attr):
 @register.simple_tag
 def follow_up_attr_name(attr):
     ''' "safe_pregnancy_crap" => "some crap" '''
-    return attr.replace("safe_pregnancy_", "").replace("_", " ")
+    return attr.replace("safe_pregnancy_", "").replace("case_update_", "").replace("_", " ")
