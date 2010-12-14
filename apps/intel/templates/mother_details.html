@@ -116,7 +116,7 @@
 		{% endfor %} -->
 	</table>
 	{% for follow_up in follow_ups %}
-		<h3>Follow Up {{ forloop.counter }}</h3>
+		<h3>Follow Up : {{ follow_up.meta_timeend|date:"D d M Y G:i" }}</h3>
 		<table>
 		    <thead><th>Name</th><th>Value</th></thead>
 			{% for attr in follow_ups_attrs %}
