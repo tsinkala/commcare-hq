@@ -6,6 +6,7 @@ from django.http import HttpResponse
 import os
 import settings
 import time, datetime
+import logging
 
 from django_digest.decorators import httpdigest
 from domain.decorators import add_domain_to_request
@@ -53,6 +54,10 @@ def ota_restore(request):
 
     atts = Metadata.objects.filter(username=username).filter(formdefmodel__domain=pu[0].phone.domain)
 
+    #Store all created case ID's (so that we won't return any fragments) and any transactions we can't include
+    created_cases = []
+    invalid_cases = []
+
     for a in atts:
         path = a.attachment.filepath
 
@@ -79,9 +84,23 @@ def ota_restore(request):
             
             case_id = case.getElementsByTagName("case_id")[0].firstChild.data
 
+            # Check for presence of "Create" element to see if this creates a case
+            if len(case.getElementsByTagName("create")) == 0:
+              # This is not a case creation, we shouldn't add it unless the create has happened
+              if not case_id in created_cases:
+                # if not, note it in the invalid_cases list and don't include it
+                invalid_cases.append(case_id)
+                continue;
+            else:
+              #This is a case creation, put it in the list of created id's
+              created_cases.append(case_id)
+
             key = "%s:%s" % (date_modified, case_id)
             cases_list[key] = case
-                
+
+    # check for problems and report them if so
+    if len(invalid_cases) > 0:
+      logging.error("Invalid case blocks found during restore attempt for user %s in domain %s. Uncreated Cases: %s" % (username, pu[0].phone.domain, invalid_cases))
                 
     # create the xml, sorted by timestamps
     
