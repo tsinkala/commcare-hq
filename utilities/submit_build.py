@@ -120,6 +120,7 @@ if __name__ == "__main__":
             description = os.environ['description_d' % count] 
 
             builds.append((build_number_n, jar_file, jad_file, description))
+            count += 1
 
           except Exception, e:
             #no harm, no foul
