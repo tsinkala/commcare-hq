@@ -112,7 +112,7 @@ if __name__ == "__main__":
 
         count = 1;
 
-        while os.environ.has_key["jar_file_path_%d" % count]:
+        while os.environ.has_key("jar_file_path_%d" % count):
           try:
             build_number_n = int(str(count) + str(build_number))
             jar_file = os.environ['jar_file_path_%d' % count]
