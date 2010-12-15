@@ -117,7 +117,7 @@ if __name__ == "__main__":
             build_number_n = int(str(count) + str(build_number))
             jar_file = os.environ['jar_file_path_%d' % count]
             jad_file = os.environ['jad_file_path_%d' % count]
-            description = os.environ['description_d' % count] 
+            description = os.environ['description_%d' % count] 
 
             builds.append((build_number_n, jar_file, jad_file, description))
             count += 1
