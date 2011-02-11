@@ -15,6 +15,14 @@ bad/*
 rapidsms-django.log*
 rapidsms.log*
 data/*
+apps/releasemanager/DimagiKeyStore
 1.0_migration/tmp/*
 1.0_migration/errors/*
 startover.sh
+*.jad
+*.gz
+*.sql
+*.old
+*.save
+*.bak
+\#*\#
