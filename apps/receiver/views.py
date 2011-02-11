@@ -135,10 +135,8 @@ def domain_submit(request, domain_name):
         if errors:
             response = SubmitResponse(status_code=500, or_status_code=5000)
             return response.to_response()
-        else:
-            return HttpResponse(result)
-    else:
-        return _do_domain_submission(request, domain_name, False)
+    # save to 0.9 even when forwarding to 1.0
+    return _do_domain_submission(request, domain_name, False)
 
 def _do_domain_submission(request, domain_name, is_resubmission=False):
     if request.method != 'POST':
