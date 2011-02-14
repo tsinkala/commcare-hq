@@ -3,7 +3,7 @@ from django.conf.urls.defaults import *
 
 urlpatterns = patterns('',                       
     url(r'^receiver/submit/$', 'receiver.views.raw_submit', name='raw_submit'),
-    url(r'^receiver/submit/(?P<domain_name>.*)/$', 'receiver.views.domain_submit', name='domain_submit'),
+    url(r'^receiver/submit/(?P<domain_name>.*)$', 'receiver.views.domain_submit', name='domain_submit'),
     url(r'^receiver/resubmit/(?P<domain_name>.*)$', 'receiver.views.domain_resubmit', name='domain_resubmit'),
     url(r'^receiver/review/?$', 'receiver.views.show_submits', name='show_submits'),
     url(r'^receiver/review/dupes/(?P<submission_id>\d+)/?$', 'receiver.views.show_dupes', name='show_dupes'),
