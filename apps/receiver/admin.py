@@ -13,8 +13,11 @@ class SubmissionHandlingAdmin(admin.ModelAdmin):
     list_display = ('id','submission','handled')
     list_filter = ['handled']  
 
+class MigrationStatusAdmin(admin.ModelAdmin):
+    list_display = ('domain', 'forward_url', 'block')
 admin.site.register(Submission,SubmissionAdmin)
 admin.site.register(Attachment,AttachmentAdmin)
 admin.site.register(SubmissionHandlingOccurrence, SubmissionHandlingAdmin)
 admin.site.register(SubmissionHandlingType)
 admin.site.register(Annotation)
+admin.site.register(MigrationStatus, MigrationStatusAdmin)

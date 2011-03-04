@@ -90,7 +90,9 @@ class AuthenticatedHandler(object):
 
 
 if __name__ == "__main__":
-    
+
+    builds = []
+
     try:       
         hostname = os.environ['hostname']
         username = os.environ['username']
@@ -99,9 +101,31 @@ if __name__ == "__main__":
         project_id = os.environ['project_id']        
         revision_number = os.environ['revision_number']
         build_number = os.environ['build_number']
+
+        # All 3 of these variables can be repeated multiple times
+
         jar_file = os.environ['jar_file_path']
         jad_file = os.environ['jad_file_path']
         description = os.environ['description']  
+
+        builds.append((build_number, jar_file, jad_file, description))
+
+        count = 1;
+
+        while os.environ.has_key("jar_file_path_%d" % count):
+          try:
+            build_number_n = int(str(count) + str(build_number))
+            jar_file = os.environ['jar_file_path_%d' % count]
+            jad_file = os.environ['jad_file_path_%d' % count]
+            description = os.environ['description_%d' % count] 
+
+            builds.append((build_number_n, jar_file, jad_file, description))
+            count += 1
+
+          except Exception, e:
+            #no harm, no foul
+            break;
+
     except Exception, e:
         #no environmental variables, check to see if the arguments are there in the cmdline
         if len(sys.argv) < 10:
@@ -125,16 +149,19 @@ if __name__ == "__main__":
             password = sys.argv[3]
             project_id = sys.argv[4]        
             build_number = sys.argv[5]
-            revision_number = sys.argv[6]                    
+            revision_number = sys.argv[6]                
             jar_file = sys.argv[7]
             jad_file = sys.argv[8]
             description = ' '.join(sys.argv[9:])
+            builds.append((build_number, jar_file, jad_file, description))
 
     uploader = AuthenticatedHandler(username,password,hostname)
-    uploader.do_upload_build(hostname,
-                             project_id, 
-                             revision_number,
-                             build_number,
-                             jar_file,
-                             jad_file,
-                             description)
+
+    for build in builds:
+      uploader.do_upload_build(hostname,
+                               project_id, 
+                               revision_number,
+                               build[0],
+                               build[1],
+                               build[2],
+                               build[3])
