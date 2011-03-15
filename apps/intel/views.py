@@ -174,16 +174,16 @@ def delete_visit(request):
     
 @require_domain("grameen")    
 def mother_details(request):
-    chw, case_id = request.GET['case_id'].split('|')
+    chw, case_case_id = request.GET['case_id'].split('|')
     mother_name = request.GET['mother_name']
     
     context = {'clinic' : _get_clinic(request), 'page': "single"}
     context['hq_mode'] = (context['clinic']['name'] == 'HQ')
 
     try:
-        mom = registrations().get(sampledata_mother_name=mother_name, sampledata_case_id=case_id, meta_username=chw)
+        mom = registrations().get(sampledata_mother_name=mother_name, sampledata_case_case_id=case_case_id, meta_username=chw)
     except IntelGrameenMotherRegistration.DoesNotExist: # check for malparsed new form
-        mom = registrations().get(sampledata_mother_name=mother_name, sampledata_case_create_external_id=case_id, meta_username=chw)
+        mom = registrations().get(sampledata_mother_name=mother_name, sampledata_case_create_external_id=case_case_id, meta_username=chw)
     
     mom.sampledata_months_pregnant = int(mom.sampledata_weeks_pregnant) / 4
     
