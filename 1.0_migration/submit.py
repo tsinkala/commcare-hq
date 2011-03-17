@@ -27,7 +27,7 @@ for line in sys.stdin:
             message = "Registered user %s (%s)" % (user_id, username)
         else:
             message = results
-        print "%s: %s" % (uuid, message)
+        print u"%s: %s" % (uuid, message)
         if results.startswith("\n<!DOCTYPE HTML PUBLIC"):
             with open('1.0_migration/errors/%s.html' % uuid, 'w') as f:
                 f.write(results)
