@@ -6,8 +6,7 @@ import re
 url = sys.argv[1]
 
 success = "<?xml version='1.0' encoding='UTF-8'?>\n<OpenRosaResponse xmlns=\"http://openrosa.org/http/response\">\n    <message>Thanks for submitting!</message>\n</OpenRosaResponse>"
-new_user = r"""<.xml version='1.0' encoding='UTF-8'.>\n<OpenRosaResponse xmlns="http://openrosa.org/http/response">\n    <message>Thanks for registering! Your username is (?P<username>.*)</message>\n    <Registration xmlns="http://openrosa.org/user/registration">\n        <username>.*</username>\n        <uuid>(?P<user_id>.*)</uuid>\n    </Registration >\n</OpenRosaResponse>"""
-
+new_user = r"""<OpenRosaResponse xmlns="http://openrosa.org/http/response">.*<message>Thanks for registering! Your username is (?P<username>.*)</message>.*<uuid>(?P<user_id>.*)</uuid>"""
 for line in sys.stdin:
     try:
         s = json.loads(line)
@@ -18,7 +17,7 @@ for line in sys.stdin:
     def ____(domain, submit_time, uuid, body, url):
         #url = url.format(domain=domain.lower())
         results, errors = post_data(body, url, submit_time)
-        reg_match = re.match(new_user, results)
+        reg_match = re.search(new_user, results, flags=re.DOTALL)
         if results == success:
             message = "Success"
         elif reg_match:
