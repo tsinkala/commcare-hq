@@ -134,6 +134,7 @@ def domain_submit(request, domain_name):
         result, errors = post_data(request.raw_post_data, ms.forward_url, request.META.get('HTTP_X_SUBMIT_TIME', None))
         if errors:
             response = SubmitResponse(status_code=500, or_status_code=5000)
+            response.add_param("forward_error", errors)
             return response.to_response()
     # save to 0.9 even when forwarding to 1.0
     return _do_domain_submission(request, domain_name, False)
