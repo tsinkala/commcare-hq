@@ -18,6 +18,9 @@ def run():
     one per line
     """
 
+    # HQ 0.9 is off from GMT by 5 hours
+    time_offset = datetime.timedelta(hours=5)
+
     all_submissions = Submission.objects.only(
         "id", "submit_time", "raw_post",
         #"submit_ip",
@@ -38,7 +41,7 @@ def run():
         try:
             errors = []
             submission_id = submission.id
-            submit_time = str(submission.submit_time)
+            submit_time = str(submission.submit_time + time_offset)
             filename = submission.raw_post
             if not filename:
                 errors.append("In submission #%s, filename is None" % submission_id)
