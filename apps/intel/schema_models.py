@@ -171,7 +171,7 @@ class IntelGrameenMotherRegistration(models.Model):
     
     @property
     def registration_date(self):
-        # for conveniece / clarity
+        # for convenience / clarity
         return self.meta_timestart
     
     @property 
@@ -183,3 +183,8 @@ class IntelGrameenMotherRegistration(models.Model):
     def pregnancy_due_date(self):
         # EDD ~= LMP + 40 weeks
         return self.pregnancy_start_date + timedelta(days=7*40)
+    
+    @property
+    def mother_name(self):
+        # for convenience / clarity
+        return self.sampledata_mother_name

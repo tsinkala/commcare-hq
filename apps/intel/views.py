@@ -200,7 +200,7 @@ def mother_details(request):
     context['mother'] = mom
     
     
-    
+    # follow ups
     follow_ups = follow_up().filter(safe_pregnancy_case_case_id=mom.sampledata_case_case_id)
     context['follow_ups'] = follow_ups
     if follow_ups:
@@ -214,6 +214,14 @@ def mother_details(request):
                 attrs.append(attr)
         context['follow_ups_attrs'] = attrs
         context['follow_up_dates'] = [date(fu.visit_date) for fu in follow_ups]
+    
+    # clinic visits
+    clinic_visits = ClinicVisit.objects.filter(mother_name=mom.mother_name,
+                                               chw_case_id=mom.sampledata_case_id,
+                                               chw_name=mom.meta_username)
+    
+    context['clinic_visit_dates'] = [date(cv.created_at) for cv in clinic_visits]
+    
     # get attachment ID for SMS Sending UI
     atts = attachments_for(REGISTRATION_TABLE)
     context['attach_id'] = atts[mom.id].id

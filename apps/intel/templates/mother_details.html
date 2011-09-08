@@ -88,6 +88,12 @@
                     <td>{{ follow_up_dates|join:", " }}</td>
                 </tr>
                 {% endif %}
+                {% if clinic_visit_dates %}
+                <tr>
+                    <td align="right">Clinic Visit Date(s):</td>
+                    <td>{{ clinic_visit_dates|join:", " }}</td>
+                </tr>
+                {% endif %}
 			</table>
 		</div>
 	</div>
