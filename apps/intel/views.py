@@ -11,6 +11,7 @@ from django.core.exceptions import *
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import redirect_to_login
 from django.contrib.auth.models import User
+from django.template.defaultfilters import date
 
 from rapidsms.webui.utils import render_to_response
 from domain.decorators import require_domain
@@ -25,7 +26,8 @@ from intel.models import *
 
 
 # A note about user authorization
-# The current system enforces user auth, and provides a plain path for where users go, depending on their role
+# The current system enforces user auth, and provides a plain path for where 
+# users go, depending on their role
 # but it is lenient regarding what users *can* see if they enter the right URLs
 # So, users can access the HQ UI if they want to
 # or see HQ/Doctor views, if they know the URLs
@@ -181,11 +183,13 @@ def mother_details(request):
     context['hq_mode'] = (context['clinic']['name'] == 'HQ')
 
     try:
-        mom = registrations().get(sampledata_mother_name=mother_name, sampledata_case_case_id=case_case_id, meta_username=chw)
+        mom = registrations().get(sampledata_mother_name=mother_name, 
+                                  sampledata_case_case_id=case_case_id, 
+                                  meta_username=chw)
     except IntelGrameenMotherRegistration.DoesNotExist: # check for malparsed new form
-        mom = registrations().get(sampledata_mother_name=mother_name, sampledata_case_create_external_id=case_case_id, meta_username=chw)
-    
-    mom.sampledata_months_pregnant = int(mom.sampledata_weeks_pregnant) / 4
+        mom = registrations().get(sampledata_mother_name=mother_name, 
+                                  sampledata_case_create_external_id=case_case_id, 
+                                  meta_username=chw)
     
     attrs = []
     for attr in dir(mom):
@@ -209,6 +213,7 @@ def mother_details(request):
               and not attr.startswith("safe_pregnancy_preg_actions_"):
                 attrs.append(attr)
         context['follow_ups_attrs'] = attrs
+        context['follow_up_dates'] = [date(fu.visit_date) for fu in follow_ups]
     # get attachment ID for SMS Sending UI
     atts = attachments_for(REGISTRATION_TABLE)
     context['attach_id'] = atts[mom.id].id

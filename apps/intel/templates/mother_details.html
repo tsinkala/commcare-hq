@@ -70,8 +70,9 @@
 		<div class="internal">
 			<table>
 				<tr><td colspan="2" align="center"><h3>Pregnancy Info</h3></td></tr>
-				<tr><td align="right">Months Pregnant:</td><td>{{ mother.sampledata_months_pregnant }}</td></tr>
-				{% ifequal mother.sampledata_hi_risk "yes" %}
+				<tr><td align="right">Months Pregnant:</td><td>{{ mother.months_pregnant }}</td></tr>
+				<tr><td align="right">Due Date:</td><td>{{ mother.pregnancy_due_date|date }}</td></tr>
+                {% ifequal mother.sampledata_hi_risk "yes" %}
 					<tr style="color: red"><td align="right">Hi Risk:</td><td>Yes</td></tr>
 					<tr><td colspan="2" style="text-align: center"><b>High Risk Factors</b></td></tr>
 					{% for f in risk_factors %}
@@ -80,6 +81,13 @@
 				{% else %}
 					<tr style="color: green"><td align="right">Hi Risk:</td><td>No</td></tr>
 				{% endifequal %}
+				<tr><td align="right">Registration Date:</td><td>{{ mother.registration_date|date }}</td></tr>
+                {% if follow_up_dates %}
+                <tr>
+                    <td align="right">Follow-up Visit Date(s):</td>
+                    <td>{{ follow_up_dates|join:", " }}</td>
+                </tr>
+                {% endif %}
 			</table>
 		</div>
 	</div>
