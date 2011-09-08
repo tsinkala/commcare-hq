@@ -74,7 +74,7 @@ def report(request, format):
     filter_chw = request.GET['meta_username'] if request.GET.has_key('meta_username') else None
     chws = [filter_chw] if filter_chw else chws_for(showclinic)
     
-    rows = registrations().filter(meta_username__in=chws).order_by('sampledata_mother_name')
+    rows = registrations().filter(meta_username__in=chws).order_by('-meta_timestart')
     if hi_risk_only: rows = rows.filter(sampledata_hi_risk='yes')
     if followup_only: 
         mothers_followed_up = follow_up().filter(meta_username__in=chws).values_list('safe_pregnancy_case_case_id', flat=True)
