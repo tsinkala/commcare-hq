@@ -11,7 +11,7 @@ from django.core.exceptions import *
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import redirect_to_login
 from django.contrib.auth.models import User
-from django.template.defaultfilters import date
+from django.template.defaultfilters import date as date_template_tag
 
 from rapidsms.webui.utils import render_to_response
 from domain.decorators import require_domain
@@ -213,14 +213,14 @@ def mother_details(request):
               and not attr.startswith("safe_pregnancy_preg_actions_"):
                 attrs.append(attr)
         context['follow_ups_attrs'] = attrs
-        context['follow_up_dates'] = [date(fu.visit_date) for fu in follow_ups]
+        context['follow_up_dates'] = [date_template_tag(fu.visit_date) for fu in follow_ups]
     
     # clinic visits
     clinic_visits = ClinicVisit.objects.filter(mother_name=mom.mother_name,
                                                chw_case_id=mom.sampledata_case_id,
-                                               chw_name=mom.meta_username)
+                                               chw_name=mom.meta_username).order_by("created_at")
     
-    context['clinic_visit_dates'] = [date(cv.created_at) for cv in clinic_visits]
+    context['clinic_visit_dates'] = [date_template_tag(cv.created_at) for cv in clinic_visits]
     
     # get attachment ID for SMS Sending UI
     atts = attachments_for(REGISTRATION_TABLE)
