@@ -160,14 +160,25 @@ class IntelGrameenMotherRegistration(models.Model):
         db_table = u'view_intel_grameen_safe_motherhood_registrations'
 
     @property
+    def days_pregnant(self):
+        """
+        Dynamically calculate days pregnant based on the visit date 
+        and how far in they were at that point
+        """
+        additional_time = datetime.now() - self.meta_timestart
+        return self.sampledata_weeks_pregnant * 7 + additional_time.days
+        
+    @property
     def months_pregnant(self):
+        return self.days_pregnant / 30
+    
+    @property
+    def weeks_pregnant(self):
         """
         Dynamically calculate months pregnant based on the visit date 
         and how far in they were at that point
         """
-        additional_time = datetime.now() - self.meta_timestart
-        total_days = self.sampledata_weeks_pregnant * 7 + additional_time.days
-        return total_days / 30
+        return self.days_pregnant / 7
     
     @property
     def registration_date(self):
