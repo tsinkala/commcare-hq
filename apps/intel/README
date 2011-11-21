@@ -1,0 +1,26 @@
+Logging In
+
+Intel required that users will only need to enter a password ("passcode") rather than username/password. So, the username is included in the URL, eg: http://www.yourwebsite.com/accounts/login/?u=username
+
+The idea is that each user will have their own URL ( http://www.yourwebsite.com/accounts/login/?u=<username> ) bookmarked on the user's machine.
+
+Clinic/HQ views
+
+Users in the app have two levels: HQ or individual clinic. In HQ mode, users browse aggregated clinic data/graphs. In clinic mode, the particular clinic's data. The distinction is not enforced in the code but in the UI - that is, if a clinic user knows the HQ URL they can access it and see the data. This is mostly there for easier debugging while the system is test, once we decide to enforce users to their own views it's just a matter of adding a line that'll return a 401 response in the hq_* views, if hq_mode is False.
+
+User/Clinics
+
+The Intel app requires users to belong to either an individual clinic or HQ. The app uses its own models: Clinic and UserClinic. These are used both to associate CHWs to a clinic, and thus tell which cases belong to it, and login users. Clinics also have non-CHW users (eg the <clinic name> users used to login), the UserClinic model has a boolean is_chw property to handle that (this is important since some of the tables in the UI should display only CHW users).
+In the Clinic table, the convention is that HQ has id=1.
+
+Clinic Visits
+
+On top of the xform collected information, the app also tracks clinic visits by the patients. This is handled by another app-specific model, ClinicVisit, which records the visitor, chw and clinic info.
+
+Working With Schema Tables
+
+The Intel app works directly with the data in the relevant schema tables. To make some use of Django's ORM, the generate_schema.py script (executed from the command line) runs Django's manage.py inspectdb and filters only Intel related views. (These views need to be created by the admin, via CommCareHQ's XForms -> Manage XForm Groups). The resulting models are piped to schema_models.py which is included by models.py, allowing the views to refer to the data in the schema tables via Django query API (with the exception of foreign keys).
+
+Charts
+
+Working the with graphing app is also different from CCHQ convention. Rather than storing each chart's settings in the DB, the apps puts them in the views code, and feeds them to the graph model via set_fields(). This makes it considerably easier to work with charts, as data can be changed in the code rather than editing the DB, which also allows keeping different servers in sync without having the edit the database when changing a chart's settings.
