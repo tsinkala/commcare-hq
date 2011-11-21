@@ -14,7 +14,7 @@
 	{% for i in items %}
 		<tr>
 			<td><a 
-				href="{% url intel.views.mother_details %}?mother_name={{i.row.sampledata_mother_name}}&case_id={{i.row.meta_username}}|{{i.row.sampledata_case_id}}"
+				href="{% url intel.views.mother_details %}?mother_name={{i.row.sampledata_mother_name}}&case_id={{i.row.meta_username}}|{{i.row.sampledata_case_case_id}}"
 				>{{ i.row.sampledata_mother_name }}</a></td>
 			<td>{{ i.row.sampledata_address }}</td>
 			<td>{{ i.row.sampledata_hi_risk|capfirst }}</td>

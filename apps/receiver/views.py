@@ -13,6 +13,9 @@ from xformmanager.manager import XFormManager
 # this import is just so we can get StorageUtility.XFormError
 from xformmanager.storageutility import StorageUtility
 from transformers.zip import get_zipfile
+from apps.domain.models import Domain
+from apps.receiver.models import MigrationStatus
+from apps.receiver.post import post_data
 
 from uploadhandler import LegacyXFormUploadParsingHandler, LegacyXFormUploadBlobHandler
 
@@ -118,6 +121,22 @@ def domain_resubmit(request, domain_name):
     return _do_domain_submission(request, domain_name, True)
 
 def domain_submit(request, domain_name):
+    try:
+        ms = MigrationStatus.objects.get(domain__name=domain_name)
+    except MigrationStatus.DoesNotExist:
+        # this never gets saved, just create a default MigrationStatus
+        ms = MigrationStatus(domain=Domain(name=domain_name))
+
+    if ms.block:
+        response = SubmitResponse(status_code=500, or_status_code=5000)
+        return response.to_response()
+    elif ms.forward_url:
+        result, errors = post_data(request.raw_post_data, ms.forward_url, request.META.get('HTTP_X_SUBMIT_TIME', None))
+        if errors:
+            response = SubmitResponse(status_code=500, or_status_code=5000)
+            response.add_param("forward_error", errors)
+            return response.to_response()
+    # save to 0.9 even when forwarding to 1.0
     return _do_domain_submission(request, domain_name, False)
 
 def _do_domain_submission(request, domain_name, is_resubmission=False):

@@ -24,3 +24,8 @@ def url_for(request, format):
 def attr_name(attr):
     ''' "sampledata_some_crap" => "some crap" '''
     return attr.replace("sampledata_", "").replace("_", " ")
+
+@register.simple_tag
+def follow_up_attr_name(attr):
+    ''' "safe_pregnancy_crap" => "some crap" '''
+    return attr.replace("safe_pregnancy_", "").replace("case_update_", "").replace("_", " ")

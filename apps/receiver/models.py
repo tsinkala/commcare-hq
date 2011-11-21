@@ -381,7 +381,12 @@ def log_duplicates(sender, instance, created, **kwargs): #get sender, instance, 
         except Exception, e:
             logging.error("Problem logging a duplicate attachment: %s.  The error is: %s" %\
                           (instance.display_string(), e))
-    
+
+class MigrationStatus(models.Model):
+    domain = models.OneToOneField(Domain)
+    forward_url = models.CharField(max_length=500, blank=True)
+    block = models.BooleanField(default=False)
+
 # Register to receive signals on every attachment save.
 post_save.connect(log_duplicates, sender=Attachment)
 

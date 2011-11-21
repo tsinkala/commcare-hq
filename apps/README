@@ -1,0 +1,57 @@
+The 'apps' folder contains all the django apps under active development, which form the core of commcareHQ. Every app that is prefixed with 'django_' was originally a third-party django app that we've since extended or repurposed for our needs.
+
+buildmanager/ 
+	deprecated
+
+docs/
+	the help documentation, serving up RST files in plain old HTML
+
+domain/
+	allows cchq to support multiple domains, with different users, groups, xforms, and data, completely isolated from each other in a multitenant environment.
+
+graphing/
+	create graphs
+
+hq/
+	the core HQ app, containing hq-specific configuration and setup. this handles much of the webui interface.
+
+intel/
+	intel-specific management and UI
+
+logtracker/
+	utility to log error messages to the db and email
+
+ota_restore/
+	the beginnings of over-the-air restore for mobile clients
+
+phone/
+	phone management. here are the models for registering users and phones.
+
+photos/
+   	support the receipt and display of photos submitted by the mobile phone
+
+program/
+	the beginnings of program or organization management. this is what we use to create group-specific reports, or to divide up users into smaller groups.
+
+receiver/
+	all this does is receive posts from the mobile client and log them. this is separate and invisible to xformmanager, since it is designed to catch and store submissions in a safe place even if it's poorly formed or something terrible goes wrong in the parsin.
+
+releasemanager/
+	mananges builds, deployments, versions, etc. of the mobile phone application
+
+reports/
+	web-based reports 
+
+requestlogger/
+	logs http requests received from external entities to this website. specifically, we use this to log who has downloaded jad/jar mobile applications, from where, when
+
+transformers/
+	utility app used to move sql into csv, json, etc.
+
+user_registration/
+	used for user login/logout, password reset, etc.
+
+xformmanager/
+	receives and stores xform data
+
+

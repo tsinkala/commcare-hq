@@ -1,6 +1,6 @@
 
 from django.db import models
-
+from datetime import datetime, timedelta
 
 class IntelGrameenSafeMotherhoodFollowup(models.Model):
     form_id = models.IntegerField()
@@ -73,7 +73,10 @@ class IntelGrameenSafeMotherhoodFollowup(models.Model):
     class Meta:
         db_table = u'view_intel_grameen_safe_motherhood_followups'
 
-
+    @property
+    def visit_date(self):
+        # for conveniece / clarity
+        return self.meta_timestart
 
 class IntelGrameenMotherRegistration(models.Model):
     form_id = models.IntegerField()
@@ -156,4 +159,43 @@ class IntelGrameenMotherRegistration(models.Model):
     class Meta:
         db_table = u'view_intel_grameen_safe_motherhood_registrations'
 
-
+    @property
+    def days_pregnant(self):
+        """
+        Dynamically calculate days pregnant based on the visit date 
+        and how far in they were at that point
+        """
+        additional_time = datetime.now() - self.meta_timestart
+        return self.sampledata_weeks_pregnant * 7 + additional_time.days
+        
+    @property
+    def months_pregnant(self):
+        return self.days_pregnant / 30
+    
+    @property
+    def weeks_pregnant(self):
+        """
+        Dynamically calculate months pregnant based on the visit date 
+        and how far in they were at that point
+        """
+        return self.days_pregnant / 7
+    
+    @property
+    def registration_date(self):
+        # for convenience / clarity
+        return self.meta_timestart
+    
+    @property 
+    def pregnancy_start_date(self):
+        # guess the LMP
+        return self.registration_date - timedelta(days=7*self.sampledata_weeks_pregnant)
+        
+    @property
+    def pregnancy_due_date(self):
+        # EDD ~= LMP + 40 weeks
+        return self.pregnancy_start_date + timedelta(days=7*40)
+    
+    @property
+    def mother_name(self):
+        # for convenience / clarity
+        return self.sampledata_mother_name

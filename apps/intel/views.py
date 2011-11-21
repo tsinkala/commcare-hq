@@ -11,6 +11,7 @@ from django.core.exceptions import *
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import redirect_to_login
 from django.contrib.auth.models import User
+from django.template.defaultfilters import date as date_template_tag
 
 from rapidsms.webui.utils import render_to_response
 from domain.decorators import require_domain
@@ -25,7 +26,8 @@ from intel.models import *
 
 
 # A note about user authorization
-# The current system enforces user auth, and provides a plain path for where users go, depending on their role
+# The current system enforces user auth, and provides a plain path for where 
+# users go, depending on their role
 # but it is lenient regarding what users *can* see if they enter the right URLs
 # So, users can access the HQ UI if they want to
 # or see HQ/Doctor views, if they know the URLs
@@ -54,6 +56,9 @@ def report(request, format):
     # hi risk view?
     hi_risk_only = request.path.replace(".%s" % format, '').endswith('/risk')
     context['page'] = 'risk' if hi_risk_only else 'all' 
+    
+    # followup view?
+    followup_only = True if (request.GET.has_key('follow') and request.GET['follow'] == 'yes') else False
         
     if request.GET.has_key('meta_username'):
         showclinic = None
@@ -62,15 +67,18 @@ def report(request, format):
         else:
             context['title'] = "Cases Entered by %s" % request.GET['meta_username']
         
-        if request.GET.has_key('follow') and request.GET['follow'] == 'yes':
-            context['title'] += ", Followed Up"
+        if followup_only:
+            context['title'] += " and Followed Up"
 
     # filter by CHW name
     filter_chw = request.GET['meta_username'] if request.GET.has_key('meta_username') else None
     chws = [filter_chw] if filter_chw else chws_for(showclinic)
     
-    rows = registrations().filter(meta_username__in=chws).order_by('sampledata_mother_name')
+    rows = registrations().filter(meta_username__in=chws).order_by('-meta_timestart')
     if hi_risk_only: rows = rows.filter(sampledata_hi_risk='yes')
+    if followup_only: 
+        mothers_followed_up = follow_up().filter(meta_username__in=chws).values_list('safe_pregnancy_case_case_id', flat=True)
+        rows = rows.filter(sampledata_case_case_id__in=mothers_followed_up)
             
     # filter by a specific risk indicator (for links from the HQ view "High Risk" page)
     if request.GET.has_key('filter'):
@@ -168,18 +176,20 @@ def delete_visit(request):
     
 @require_domain("grameen")    
 def mother_details(request):
-    chw, case_id = request.GET['case_id'].split('|')
+    chw, case_case_id = request.GET['case_id'].split('|')
     mother_name = request.GET['mother_name']
     
     context = {'clinic' : _get_clinic(request), 'page': "single"}
     context['hq_mode'] = (context['clinic']['name'] == 'HQ')
 
     try:
-        mom = registrations().get(sampledata_mother_name=mother_name, sampledata_case_id=case_id, meta_username=chw)
+        mom = registrations().get(sampledata_mother_name=mother_name, 
+                                  sampledata_case_case_id=case_case_id, 
+                                  meta_username=chw)
     except IntelGrameenMotherRegistration.DoesNotExist: # check for malparsed new form
-        mom = registrations().get(sampledata_mother_name=mother_name, sampledata_case_create_external_id=case_id, meta_username=chw)
-    
-    mom.sampledata_months_pregnant = int(mom.sampledata_weeks_pregnant) / 4
+        mom = registrations().get(sampledata_mother_name=mother_name, 
+                                  sampledata_case_create_external_id=case_case_id, 
+                                  meta_username=chw)
     
     attrs = []
     for attr in dir(mom):
@@ -188,6 +198,29 @@ def mother_details(request):
 
     context['attrs'] = sorted(attrs)
     context['mother'] = mom
+    
+    
+    # follow ups
+    follow_ups = follow_up().filter(safe_pregnancy_case_case_id=mom.sampledata_case_case_id)
+    context['follow_ups'] = follow_ups
+    if follow_ups:
+        attrs = []
+        for attr in dir(follow_ups[0]):
+            if attr.startswith("safe_pregnancy_case_update_pregnancy_actions_"):
+                attrs.append(attr)
+            elif attr.startswith("safe_pregnancy_") \
+              and not attr.startswith("safe_pregnancy_case_") \
+              and not attr.startswith("safe_pregnancy_preg_actions_"):
+                attrs.append(attr)
+        context['follow_ups_attrs'] = attrs
+        context['follow_up_dates'] = [date_template_tag(fu.visit_date) for fu in follow_ups]
+    
+    # clinic visits
+    clinic_visits = ClinicVisit.objects.filter(mother_name=mom.mother_name,
+                                               chw_case_id=mom.sampledata_case_id,
+                                               chw_name=mom.meta_username).order_by("created_at")
+    
+    context['clinic_visit_dates'] = [date_template_tag(cv.created_at) for cv in clinic_visits]
     
     # get attachment ID for SMS Sending UI
     atts = attachments_for(REGISTRATION_TABLE)
