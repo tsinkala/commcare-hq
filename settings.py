@@ -702,6 +702,16 @@ MESSAGE_TAGS = {
     messages.ERROR: 'alert-error',
 }
 
+# Indicators
+INDICATOR_CONFIG = {
+    "mvp-sauri": ['mvp_indicators'],
+    "mvp-potou": ['mvp_indicators'],
+}
+
+INDICATOR_PILLOWTOPS = [
+    'corehq.apps.indicators.pillows.CaseIndicatorPillow',
+]
+
 COMMCARE_USER_TERM = "Mobile Worker"
 WEB_USER_TERM = "Web User"
 
@@ -729,10 +739,13 @@ SELENIUM_APP_SETTING_DEFAULTS = {
 ELASTICSEARCH_HOST = 'localhost'
 ELASTICSEARCH_PORT = 9200
 
-PILLOWTOPS = [ 'corehq.pillows.CasePillow',
-               #'corehq.pillows.ExchangePillow', #todo when merged
+#PILLOWTOPS = [ 'corehq.pillows.CasePillow',
+#               #'corehq.pillows.ExchangePillow', #todo when merged
+#
+#               'corehq.pillows.AuditcarePillow',
+#               'corehq.pillows.CouchlogPillow',
+#               'corehq.pillows.DevicelogPillow',
+#               ] + LOCAL_PILLOWTOPS + INDICATOR_PILLOWTOPS
 
-               'corehq.pillows.AuditcarePillow',
-               'corehq.pillows.CouchlogPillow',
-               'corehq.pillows.DevicelogPillow',
-               ] + LOCAL_PILLOWTOPS
+PILLOWTOPS = INDICATOR_PILLOWTOPS
+
