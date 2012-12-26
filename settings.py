@@ -2,10 +2,8 @@
 # vim: ai ts=4 sts=4 et sw=4 encoding=utf-8
 
 import os
-import logging
 from django.contrib import messages
-
-
+from django.utils.datastructures import SortedDict
 
 CACHE_BACKEND = 'memcached://127.0.0.1:11211/'
 
@@ -37,12 +35,8 @@ SITE_ID = 1
 USE_I18N = True
 
 # Django i18n searches for translation files (django.po) within this dir
-LOCALE_PATHS=['contrib/locale']
-
-# Absolute path to the directory that holds media.
-# Example: "/home/media/media.lawrence.com/"
-MEDIA_ROOT = ''
-STATIC_ROOT = ''
+# and then in the locale/ directories of installed apps
+LOCALE_PATHS = ()
 
 # URL that handles the media served from MEDIA_ROOT. Make sure to use a
 # trailing slash if there is a path component (optional in other cases).
@@ -51,6 +45,9 @@ MEDIA_URL = '/media/'
 STATIC_URL = '/static/'
 
 FILEPATH = os.path.abspath(os.path.dirname(__file__))
+# media for user uploaded media.  in general this won't be used at all.
+MEDIA_ROOT = os.path.join(FILEPATH, 'mediafiles')
+STATIC_ROOT = os.path.join(FILEPATH, 'staticfiles')
 
 STATICFILES_FINDERS = (
     "django.contrib.staticfiles.finders.FileSystemFinder",
@@ -68,8 +65,8 @@ DJANGO_LOG_FILE = "%s/%s" % (FILEPATH, "commcarehq.django.log")
 # Examples: "http://foo.com/media/", "/media/".
 ADMIN_MEDIA_PREFIX = '/static/admin/'
 
-# Make this unique, and don't share it with anybody.
-SECRET_KEY = '2rgmwtyq$thj49+-6u7x9t39r7jflu&1ljj3x2c0n0fl$)04_0'
+# Make this unique, and don't share it with anybody - put into localsettings.py
+SECRET_KEY = ''
 
 # List of callables that know how to import templates from various sources.
 TEMPLATE_LOADERS = (
@@ -126,7 +123,8 @@ DEFAULT_APPS = (
     #'ghettoq',     # pip install ghettoq
     'djkombu',     # pip install django-kombu
     'couchdbkit.ext.django',
-    'crispy_forms'
+    'crispy_forms',
+    'django.contrib.markup',
 )
 
 CRISPY_TEMPLATE_PACK = 'bootstrap'
@@ -209,10 +207,14 @@ HQ_APPS = (
     'dca',
     'hsph',
     'mvp',
+    'mvp_apps',
     'pathfinder',
     'pathindia',
 )
 
+TEST_APPS = (
+    'dimagi.utils',
+)
 REFLEXIVE_URL_BASE = "localhost:8000"
 
 INSTALLED_APPS = DEFAULT_APPS + HQ_APPS
@@ -227,6 +229,7 @@ MENU_ITEMS = (
     "corehq.apps.hqwebapp.models.ProjectSettingsMenuItem",
     "corehq.apps.hqwebapp.models.AdminReportsMenuItem",
     "corehq.apps.hqwebapp.models.ExchangeMenuItem",
+    "corehq.apps.hqwebapp.models.ManageSurveysMenuItem",
 )
 
 # after login, django redirects to this URL
@@ -278,7 +281,8 @@ EMAIL_SMTP_HOST="smtp.gmail.com"
 EMAIL_SMTP_PORT=587
 
 # put email addresses here to have them receive bug reports
-BUG_REPORT_RECIPIENTS=() 
+BUG_REPORT_RECIPIENTS=()
+EXCHANGE_NOTIFICATION_RECIPIENTS = []
 
 PAGINATOR_OBJECTS_PER_PAGE = 15
 PAGINATOR_MAX_PAGE_LINKS = 5
@@ -562,38 +566,38 @@ APPSTORE_INTERFACE_MAP = {
     ]
 }
 
-PROJECT_REPORT_MAP = {
-    "Monitor Workers" : [
-        'corehq.apps.reports.standard.monitoring.CaseActivityReport',
+PROJECT_REPORT_MAP = SortedDict([
+    ["Monitor Workers", [
+        'corehq.apps.reports.standard.monitoring.DailyFormStatsReport',
         'corehq.apps.reports.standard.monitoring.SubmissionsByFormReport',
-        'corehq.apps.reports.standard.monitoring.DailySubmissionsReport',
-        'corehq.apps.reports.standard.monitoring.DailyFormCompletionsReport',
-        'corehq.apps.reports.standard.monitoring.FormCompletionTrendsReport',
+        'corehq.apps.reports.standard.monitoring.FormCompletionTimeReport',
+        'corehq.apps.reports.standard.monitoring.CaseActivityReport',
         'corehq.apps.reports.standard.monitoring.FormCompletionVsSubmissionTrendsReport',
-        'corehq.apps.reports.standard.monitoring.SubmissionTimesReport',
-        'corehq.apps.reports.standard.monitoring.SubmitDistributionReport',
-    ],
-    "Inspect Data" : [
+        'corehq.apps.reports.standard.monitoring.WorkerActivityTimes',
+    ]],
+    ["Inspect Data", [
         'corehq.apps.reports.standard.inspect.SubmitHistory',
         'corehq.apps.reports.standard.inspect.CaseListReport',
         'corehq.apps.reports.standard.inspect.MapReport',
-    ],
-    "Raw Data" : [
+    ]],
+    ["Raw Data", [
         'corehq.apps.reports.standard.export.ExcelExportReport',
         'corehq.apps.reports.standard.export.CaseExportReport',
         'corehq.apps.reports.standard.export.DeidExportReport',
-    ],
-    "Manage Deployments" : [
+    ]],
+    ["Manage Deployments", [
         'corehq.apps.reports.standard.deployments.ApplicationStatusReport',
         'corehq.apps.receiverwrapper.reports.SubmissionErrorReport',
         'phonelog.reports.FormErrorReport',
         'phonelog.reports.DeviceLogDetailsReport'
-    ],
-    "Commtrack": [
+    ]],
+    ["Commtrack", [
         'corehq.apps.reports.commtrack.psi_prototype.VisitReport',
         'corehq.apps.reports.commtrack.psi_prototype.SalesAndConsumptionReport',
-    ],
-}
+        'corehq.apps.reports.commtrack.psi_prototype.StockReportExport',
+        'corehq.apps.reports.standard.sms.MessagesReport', # TODO: move to sms section?
+    ]]
+])
 
 CUSTOM_REPORT_MAP = {
     ## legacy custom reports. do not follow practices followed here
@@ -671,9 +675,11 @@ CUSTOM_REPORT_MAP = {
             "bihar.reports.supervisor.MainNavReport",
             "bihar.reports.supervisor.WorkerRankSelectionReport",
             "bihar.reports.supervisor.DueListReport",
-            "bihar.reports.supervisor.ToolsReport",
+            "bihar.reports.supervisor.ToolsNavReport",
+            "bihar.reports.supervisor.ReferralListReport",
+            "bihar.reports.supervisor.EDDCalcReport",
+            "bihar.reports.supervisor.BMICalcReport",
             "bihar.reports.supervisor.SubCenterSelectionReport",
-            "bihar.reports.indicators.reports.IndicatorSelectNav",
             "bihar.reports.indicators.reports.IndicatorNav",
             "bihar.reports.indicators.reports.IndicatorSummaryReport",
             "bihar.reports.indicators.reports.IndicatorClientSelectNav",
@@ -721,8 +727,9 @@ ADM_ADMIN_INTERFACE_MAP = {
 }
 
 ANNOUNCEMENTS_ADMIN_INTERFACE_MAP = {
-    "Global HQ Announcements": [
+    "Manage Announcements": [
         'corehq.apps.announcements.interface.ManageGlobalHQAnnouncementsInterface',
+        'corehq.apps.announcements.interface.ManageReportAnnouncementsInterface',
     ]
 }
 
@@ -742,6 +749,7 @@ DEFAULT_CURRENCY = "USD"
 SMS_HANDLERS = [
     'corehq.apps.commtrack.sms.handle',
     'corehq.apps.sms.api.form_session_handler',
+    'corehq.apps.sms.api.fallback_handler',
 ]
 
 # mapping of phone number prefix (including country code) to a registered
@@ -773,3 +781,5 @@ PILLOWTOPS = [ 'corehq.pillows.CasePillow',
                'corehq.pillows.CouchlogPillow',
                'corehq.pillows.DevicelogPillow',
                ] + LOCAL_PILLOWTOPS
+
+REMOTE_APP_NAMESPACE = "%(domain)s.commcarehq.org"
