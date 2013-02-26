@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # vim: ai ts=4 sts=4 et sw=4 encoding=utf-8
+from collections import defaultdict
 
 import os
 from django.contrib import messages
@@ -93,7 +94,7 @@ MIDDLEWARE_CLASSES = [
 ROOT_URLCONF = "urls"
 
 TEMPLATE_CONTEXT_PROCESSORS = [
-    "django.core.context_processors.auth",
+    "django.contrib.auth.context_processors.auth",
     "django.core.context_processors.debug",
     "django.core.context_processors.i18n",
     "django.core.context_processors.media",
@@ -389,6 +390,9 @@ ELASTICSEARCH_PORT = 9200
 
 #for production this ought to be set to true on your configured couch instance
 COUCH_HTTPS = False
+
+# this should be overridden in localsettings
+INTERNAL_DATA = defaultdict(list)
 
 try:
     #try to see if there's an environmental variable set for local_settings
