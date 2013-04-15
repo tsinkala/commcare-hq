@@ -1,5 +1,5 @@
 from django.conf.urls.defaults import patterns, url, include
-from django.views.generic.simple import direct_to_template
+from django.views.generic import TemplateView
 
 app_urls = patterns('corehq.apps.cloudcare.views',
     url(r'^view/(?P<app_id>[\w-]+)/modules-(?P<module_id>[\w-]+)/forms-(?P<form_id>[\w-]+)/context/$',
@@ -34,6 +34,6 @@ urlpatterns = patterns('corehq.apps.cloudcare.views',
     url(r'^$', 'default', name='cloudcare_default'),
     url(r'^apps/', include(app_urls)),
     url(r'^cases/', include(cases_urls)),
-    url(r'^test/$', direct_to_template, {'template': 'cloudcare/test.html'}),
+    url(r'^test/$', TemplateView.as_view(template_name='cloudcare/test.html')),
     url(r'^api/', include(api_urls)),
 )

@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.forms.fields import *
 from django.forms.forms import Form
 from django.forms import Field, Widget, Select, TextInput
-from django.utils.datastructures import DotExpandedDict
+from .util import DotExpandedDict
 from .models import REPEAT_SCHEDULE_INDEFINITELY, CaseReminderEvent,\
 RECIPIENT_USER, RECIPIENT_CASE, RECIPIENT_SURVEY_SAMPLE, RECIPIENT_OWNER,\
 MATCH_EXACT, MATCH_REGEX, MATCH_ANY_VALUE, EVENT_AS_SCHEDULE, EVENT_AS_OFFSET,\
