@@ -60,7 +60,7 @@
         $(function () {
             var langs = {{ app.langs|JSON }};
             var buildLangs = {{ app.build_langs|JSON }};
-            var saveURL = "{% url edit_app_langs domain app.id %}";
+            var saveURL = "{% url 'edit_app_langs' domain app.id %}";
             var edit = {{ edit|JSON }};
             var validate = !{{ app.is_remote_app|BOOL }};
             ko.applyBindings(new SupportedLanguages({
@@ -166,7 +166,7 @@
                 var $translation_ui = $("#translations_ui");
                 mk_translation_ui({
                     translations: {{ translations|JSON }},
-                    url: "{% url edit_app_translations domain app.id %}",
+                    url: "{% url 'edit_app_translations' domain app.id %}",
                     lang: "{{ lang }}",
                     edit: {{ edit|yesno:"true,false" }},
                     $home: $translation_ui
@@ -175,14 +175,14 @@
         </script>
         <script>
             $(function () {
-                var saveURL = "{% url edit_commcare_profile domain app.id %}",
+                var saveURL = "{% url 'edit_commcare_profile' domain app.id %}",
                     defaultHome = $('#other-commcare-settings'),
                     senseHome = $('#commcare-sense-properties'),
                     logHome = $('#log-properties'),
                     languageHome = $('#language-properties'),
                     $block,
                     saveButtonHolder = $('#commcare-settings .save-button-holder');
-                $.get('{% url corehq.apps.app_manager.views.commcare_profile domain app.id %}', function (initialValues) {
+                $.get('{% url 'corehq.apps.app_manager.views.commcare_profile' domain app.id %}', function (initialValues) {
                     initialValues = JSON.parse(initialValues);
                     $.get('{% static "app_manager/json/custom-commcare-properties.json" %}', function (profile_spec) {
 
@@ -381,7 +381,7 @@
     {% else %}
         <h4>Remote Setup</h4>
     {% endif %}
-    <form class="save-button-form" id="app-settings" method="post" action="{% url edit_app_attr domain app.id 'all' %}">
+    <form class="save-button-form" id="app-settings" method="post" action="{% url 'edit_app_attr' domain app.id 'all' %}">
         <div class="config">
             <div class="save-button-holder"></div>
             <table>
@@ -604,7 +604,7 @@
             {% include "app_manager/partials/supported-languages.html" %}
         </div>
     {% if app.get_doc_type == "Application" %}
-        <h4><a href="{% url app_summary domain app.id %}" class="btn btn-primary">Application Summary</a></h4>
+        <h4><a href="{% url 'app_summary' domain app.id %}" class="btn btn-primary">Application Summary</a></h4>
 
         {% if multimedia %}
         <div class="scary-settings-toggle">
@@ -614,7 +614,7 @@
             {% if edit %}
                 <h3 style="text-align: left;">{% trans 'Manage Multimedia' %}</h3>
                 <p>{% blocktrans %}View, upload, and download your application's multimedia{% endblocktrans %}</p>
-                <p><a target="_blank" class="btn btn-primary" style="color: #ffffff; text-decoration: none;" href="{% url hqmedia_references domain app.get_id %}"><i class="icon icon-check"></i>
+                <p><a target="_blank" class="btn btn-primary" style="color: #ffffff; text-decoration: none;" href="{% url 'hqmedia_references' domain app.get_id %}"><i class="icon icon-check"></i>
                     {% blocktrans %}Multimedia Reference Checker</a> (opens in a new window){% endblocktrans %}</p>
             {% endif %}
             <h3 style="margin-top: 1em; text-align: left;">{% trans 'Download Multimedia Zip' %}</h3>
@@ -660,7 +660,7 @@
         
     {% endif %}
     <div>
-        <form method="get" action='{% url import_app domain %}' style="font-size: .8em; text-align: right;">
+        <form method="get" action='{% url 'import_app' domain %}' style="font-size: .8em; text-align: right;">
             <input type="hidden" name="app" value="{{ app.id }}"/>
             Copy this app to project: <input type="text" name="domain" />
             <input type="submit" value="Copy..." />

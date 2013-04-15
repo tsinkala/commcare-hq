@@ -47,7 +47,7 @@
             <p>If you want your application back, click Restore.</p>
         </div>
         <div class="modal-footer">
-            <a href="{% url undo_delete_app domain app.id %}" class="post-link btn btn-primary">Restore</a>
+            <a href="{% url 'undo_delete_app' domain app.id %}" class="post-link btn btn-primary">Restore</a>
             <a href="#" class="btn" data-dismiss="modal">No thanks, get me out of here</a>
         </div>
     </div>
@@ -59,7 +59,7 @@
             keyboard: false,
             show: true
         }).on('hide', function () {
-            window.location = "{% url corehq.apps.app_manager.views.default domain %}";
+            window.location = "{% url 'corehq.apps.app_manager.views.default' domain %}";
         });
         $('.hq-help-template').each(function () {
             COMMCAREHQ.makeHqHelp({
@@ -161,17 +161,17 @@
                                 <span class="caret"></span>
                             </span>
                             <ul class="dropdown-menu">
-                                <li class="form" data-action="{% url corehq.apps.app_manager.views.new_app domain %}" data-method="post">
+                                <li class="form" data-action="{% url 'corehq.apps.app_manager.views.new_app' domain %}" data-method="post">
                                     <input type="hidden" name="type" value="Application" />
                                     <input type="hidden" name="application_version" value="2.0" />
                                     <a href="#" class="submit">{% trans 'Blank Application' %}</a>
                                 </li>
-                                <li class="form" data-action="{% url corehq.apps.app_manager.views.new_app domain %}" data-method="post">
+                                <li class="form" data-action="{% url 'corehq.apps.app_manager.views.new_app' domain %}" data-method="post">
                                     <input type="hidden" name="type" value="RemoteApp" />
                                     <a href="#" class="submit">{% trans 'Remote App (Advanced Users Only)' %}</a>
                                 </li>
                                 <li>
-                                    <a href="{% url appstore %}">{% trans 'Visit CommCare Exchange to copy existing app...' %}</a>
+                                    <a href="{% url 'appstore' %}">{% trans 'Visit CommCare Exchange to copy existing app...' %}</a>
                                 </li>
                             </ul>
                         </div>
@@ -186,7 +186,7 @@
                         <option value="#" disabled="" selected="">No Application Selected</option>
                     {% endif %}
                     {% for a in applications %}
-                    <option value="{% url corehq.apps.app_manager.views.view_app domain a.id %}"
+                    <option value="{% url 'corehq.apps.app_manager.views.view_app' domain a.id %}"
                             {% ifequal a.id app.id %}selected="" class="variable-app_name" {% endifequal %}>
                         {{ a.name }}
                         {% if a.get_doc_type == "RemoteApp" %}(remote){% endif %}
@@ -198,7 +198,7 @@
                 {% endif %}
                 {% if edit and app %}
                 <li>
-                    <form action="{% url corehq.apps.app_manager.views.delete_app domain app.id %}" method="POST">
+                    <form action="{% url 'corehq.apps.app_manager.views.delete_app' domain app.id %}" method="POST">
                         <span class="ui-icon ui-icon-trash"></span>
                         <a href="#" class="submit">Delete this application</a>
                     </form>
@@ -247,7 +247,7 @@
                     Before you begin, check out the
                     <a target="_blank" href="https://confluence.dimagi.com/display/commcarepublic/Beginner+Tutorial">Beginner Tutorial</a>.
                 </p>
-                <form action="{% url new_app domain %}">
+                <form action="{% url 'new_app' domain %}">
                     <input type="hidden" name="type" value="Application">
                     <input type="hidden" name="application_version" value="2.0" />
                     {% if request.couch_user.can_edit_apps %}
@@ -255,7 +255,7 @@
                     {% else %}
                     There are no applications at this time
                     {% endif %}
-                    or <a href="{% url appstore %}">copy an existing app from CommCare Exchange</a>.
+                    or <a href="{% url 'appstore' %}">copy an existing app from CommCare Exchange</a>.
                 </form>
             </div>
         {% endif %}

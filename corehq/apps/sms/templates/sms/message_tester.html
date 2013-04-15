@@ -1,7 +1,7 @@
 {% extends 'sms/default.html' %}
 
 {% block main_column %}
-    <form class="form form-horizontal" action="{% url corehq.apps.sms.views.message_test domain phone_number %}" method="post">
+    <form class="form form-horizontal" action="{% url 'corehq.apps.sms.views.message_test' domain phone_number %}" method="post">
         <fieldset>
             <legend>Simulate Inbound Message from +{{ phone_number }}</legend>
             <div class="control-group">

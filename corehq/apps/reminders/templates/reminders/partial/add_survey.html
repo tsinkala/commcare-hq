@@ -204,9 +204,9 @@
 {% block survey_nav %}
 <ul class="nav nav-list">
     {% if survey_id %}
-    <li class="active"><a href="{% url edit_survey domain survey_id %}">{{ form.name.value }}</a></li>
+    <li class="active"><a href="{% url 'edit_survey' domain survey_id %}">{{ form.name.value }}</a></li>
     {% else %}
-    <li class="active"><a href="{% url add_survey domain %}">New Survey</a></li>
+    <li class="active"><a href="{% url 'add_survey' domain %}">New Survey</a></li>
     {% endif %}
 </ul>
 {% endblock %}

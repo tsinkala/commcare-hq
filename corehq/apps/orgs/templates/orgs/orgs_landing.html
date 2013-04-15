@@ -86,13 +86,13 @@
     </h2>
     <ul class="nav nav-tabs">
         <li{% ifequal tab "projects" %} class="active"{% endifequal %}>
-            <a href="{% url orgs_landing org.name %}">{% trans "Projects" %} ({{ domains|length }})</a>
+            <a href="{% url 'orgs_landing' org.name %}">{% trans "Projects" %} ({{ domains|length }})</a>
         </li>
         <li{% ifequal tab "teams" %} class="active"{% endifequal %}>
-            <a href="{% url orgs_teams org.name %}">{% trans "Teams" %} ({{ teams|length }})</a>
+            <a href="{% url 'orgs_teams' org.name %}">{% trans "Teams" %} ({{ teams|length }})</a>
         </li>
         <li{% ifequal tab "members" %} class="active"{% endifequal %}>
-            <a href="{% url orgs_members org.name %}">{% trans "Members" %} ({{ members|length }})</a>
+            <a href="{% url 'orgs_members' org.name %}">{% trans "Members" %} ({{ members|length }})</a>
         </li>
         <span class="pull-right">
             {% if admin %}
@@ -104,7 +104,7 @@
         <table data-provides="rowlink" class="table table-striped" style="border-collapse:collapse">
         {% for domain in domains %}
             <tr><td style="border-top: none;">
-                <a href="{% url domain_homepage domain %}">
+                <a href="{% url 'domain_homepage' domain %}">
                     <strong>{{ domain.display_name }}</strong>
                     {% ifnotequal domain.name domain.display_name %}<small>({{ domain.name }})</small>{% endifnotequal %}
                 </a>
@@ -159,7 +159,7 @@
                 <a class="close" data-dismiss="modal">&times;</a>
                 <h3>Update Info For {{ org.title }}</h3>
             </div>
-            <form class="form-horizontal" method="post" action="{% url orgs_update_info org.name %}" enctype="multipart/form-data">
+            <form class="form-horizontal" method="post" action="{% url 'orgs_update_info' org.name %}" enctype="multipart/form-data">
                 <div class="modal-body">
                     <fieldset>
                         {% bootstrap_form_errors update_form %}
@@ -180,7 +180,7 @@
                     <a class="close" data-dismiss="modal">&times;</a>
                     <h3>Create new Project for {{ org.title }}</h3>
                 </div>
-                <form class="form-horizontal" action="{% url orgs_new_project org.name %}" method="post">
+                <form class="form-horizontal" action="{% url 'orgs_new_project' org.name %}" method="post">
                     <div class="modal-body">
                         <fieldset>
                             <legend>{% trans "Create a new project within this organization" %}</legend>
@@ -212,7 +212,7 @@
                             </div>
                             {% endfor %}
                         </fieldset>
-                        <input type="hidden" name="next" value="{% url orgs_landing org.name %}">
+                        <input type="hidden" name="next" value="{% url 'orgs_landing' org.name %}">
                         <input type="hidden" name="org" value="{{ org.name }}">
                     </div>
 
@@ -228,7 +228,7 @@
                     <a class="close" data-dismiss="modal">&times;</a>
                     <h3>{% trans "Add an existing project" %}</h3>
                 </div>
-                <form class="form-horizontal" method="post" action="{% url orgs_add_project org.name %}">
+                <form class="form-horizontal" method="post" action="{% url 'orgs_add_project' org.name %}">
                     <div class="modal-body">
                         <fieldset>
                             {% bootstrap_form_errors add_form %}
@@ -247,7 +247,7 @@
                     <a class="close" data-dismiss="modal">&times;</a>
                     <h3>{% trans "Change Project Display Name" %}</h3>
                 </div>
-                <form class="form-horizontal" method="post" action="{% url orgs_update_project org.name %}">
+                <form class="form-horizontal" method="post" action="{% url 'orgs_update_project' org.name %}">
                     <div class="modal-body">
                         <input id="updating-project" type="hidden" name="domain" value="" />
                         <div class="control-group">
@@ -270,7 +270,7 @@
             </div>
 
             <div id="remove-project-modal" class="modal hide fade">
-                <form class="form-inline" style="margin: 0;" action="{% url orgs_remove_project org.name %}" method="post">
+                <form class="form-inline" style="margin: 0;" action="{% url 'orgs_remove_project' org.name %}" method="post">
                     <div class="modal-body">
                         <a class="close" data-dismiss="modal">&times;</a>
                         <h3>Remove <em><span id="removing-project-name"></span></em> from {{ org.title }}?</h3>

@@ -1,14 +1,14 @@
 <ul class="nav nav-list">
     {% if display_ua %}
         {% if request.user.is_superuser %}
-            <li{% if not include_unapproved %} class="active"{% endif %}><a href="{% url appstore %}">Approved</a></li>
-            <li{% if include_unapproved %} class="active"{% endif %}><a href="{% url appstore %}?is_approved=false">Unapproved</a></li>
+            <li{% if not include_unapproved %} class="active"{% endif %}><a href="{% url 'appstore' %}">Approved</a></li>
+            <li{% if include_unapproved %} class="active"{% endif %}><a href="{% url 'appstore' %}?is_approved=false">Unapproved</a></li>
         {% else %}
-            <li{% if not include_unapproved and not search_query and not filter_by and not project %} class="active"{% endif %}><a href="{% url appstore %}">All</a></li>
+            <li{% if not include_unapproved and not search_query and not filter_by and not project %} class="active"{% endif %}><a href="{% url 'appstore' %}">All</a></li>
         {% endif %}
     {% endif %}
 
-    <!--<li{% if report %} class="active"{% endif %}><a href="{% url appstore_interfaces_default %}">Advanced search...</a></li>-->
+    <!--<li{% if report %} class="active"{% endif %}><a href="{% url 'appstore_interfaces_default' %}">Advanced search...</a></li>-->
 
     {% for sortable, choices in sortables %}
         <li class="nav-header">

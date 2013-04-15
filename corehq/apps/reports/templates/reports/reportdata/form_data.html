@@ -49,10 +49,10 @@
 {% block page-title %}
     <ul class="breadcrumb">
         <li>
-            <a href="{% url reports_home domain %}"><strong>Reports</strong></a> <span class="divider">&gt;</span>
+            <a href="{% url 'reports_home' domain %}"><strong>Reports</strong></a> <span class="divider">&gt;</span>
         </li>
         <li>
-            <a href="{% url project_report_dispatcher domain 'submit_history' %}">Submit History</a> <span class="divider">&gt;</span>
+            <a href="{% url 'project_report_dispatcher' domain 'submit_history' %}">Submit History</a> <span class="divider">&gt;</span>
         </li>
         <li class="active">
             <a href="#">Form Data for "{{ form_data.name }}"{% if form_data.modified %}&mdash;modified {% utc_to_timezone form_data.modified timezone %}{% endif %}</a>
@@ -75,17 +75,17 @@
         <div class="tab-pane active" id="form_display">
             {% render_form_data instance %}
             {% if not is_archived %}
-            <form action="{% url archive_form domain instance.get_id %}" method="POST">
+            <form action="{% url 'archive_form' domain instance.get_id %}" method="POST">
                 <input type="submit" class="btn btn-danger" value="{% trans "Archive this form" %}"><span class="help_popover" data-help-key="Archiving Forms"><i class="icon icon-question-sign"></i></span>
             </form>
             {% else %}
-            <form action="{% url unarchive_form domain instance.get_id %}" method="POST">
+            <form action="{% url 'unarchive_form' domain instance.get_id %}" method="POST">
                 <input type="submit" class="btn btn-primary" value="{% trans "Restore this form" %}"><span class="help_popover" data-help-key="Restoring Forms"><i class="icon icon-question-sign"></i></span>
             </form>
             {% endif %}
         </div>
         <div class="tab-pane" id="raw_xml">
-            <p><a class="btn" href="{% url download_form domain instance.get_id %}" target="_blank">Open XML in New Window</a></p>
+            <p><a class="btn" href="{% url 'download_form' domain instance.get_id %}" target="_blank">Open XML in New Window</a></p>
             <p>Double-click code below to select all:</p>
             {% render_form_xml instance %}
         </div>
@@ -93,7 +93,7 @@
         <div class="tab-pane" id="attachments">
             <ul>
                 {% for key, val in instance.attachments.items %}
-                    <li><a href="{% url download_attachment domain instance.get_id key %}">{{ key }}</a></li>
+                    <li><a href="{% url 'download_attachment' domain instance.get_id key %}">{{ key }}</a></li>
                 {% endfor %}
             </ul>
         </div>
@@ -103,7 +103,7 @@
             <ul>
                 {% for case in cases %}
                     <li>{% if case.get_id %}
-                        <a href="{% url case_details domain case.case_id %}">{% case_inline_display case %}</a>
+                        <a href="{% url 'case_details' domain case.case_id %}">{% case_inline_display case %}</a>
                     {% else %}
                         <span class="error">Unknown or malformed case</span>
                     {% endif %}

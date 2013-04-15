@@ -19,13 +19,13 @@
                         {% endif %}
                         {% if error.type == "no ref detail" %}
                             Module
-                            <a href="{% url view_module domain app.id error.module.id %}">{{ error.module.name|trans:langs }}</a>
+                            <a href="{% url 'view_module' domain app.id error.module.id %}">{{ error.module.name|trans:langs }}</a>
                             uses referrals but doesn't have
                             detail screens configured for referrals.
                         {% endif %}
                         {% if error.type == "no case detail" %}
                             Module
-                            <a href="{% url view_module domain app.id error.module.id %}">{{ error.module.name|trans:langs }}</a>
+                            <a href="{% url 'view_module' domain app.id error.module.id %}">{{ error.module.name|trans:langs }}</a>
                             uses cases but doesn't have
                             detail screens configured for cases.
                         {% endif %}
@@ -34,12 +34,12 @@
                         {% endif %}
                         {% if error.type == "no forms" %}
                             Module
-                            <a href="{% url view_module domain app.id error.module.id %}">{{ error.module.name|trans:langs }}</a>
+                            <a href="{% url 'view_module' domain app.id error.module.id %}">{{ error.module.name|trans:langs }}</a>
                             has no forms.
                         {% endif %}
                         {% if error.type == "no case type" %}
                             Module
-                            <a href="{% url view_module domain app.id error.module.id %}">{{ error.module.name|trans:langs }}</a>
+                            <a href="{% url 'view_module' domain app.id error.module.id %}">{{ error.module.name|trans:langs }}</a>
                             uses cases but doesn't have a
                             case type defined.
                         {% endif %}
@@ -75,7 +75,7 @@
                             Remote Error:
                         {% endif %}
                         {% if error.type == "empty lang" %}
-                            One of your languages is empty. Check your <a href="{% url view_app domain app.id %}">app settings</a>.
+                            One of your languages is empty. Check your <a href="{% url 'view_app' domain app.id %}">app settings</a>.
                         {% endif %}
                         {# And then show the optional `message` regardless #}
                         <span>{{ error.message }}</span>

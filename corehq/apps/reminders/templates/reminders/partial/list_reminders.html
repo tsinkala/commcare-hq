@@ -36,7 +36,7 @@
                     <td>{{ handler.nickname }}</td>
                     <td>{% if handler.start_condition_type == "CASE_CRITERIA" %}Case Criteria{% else %}{% if handler.start_condition_type == "ON_DATETIME" %}Specific Date/Time{% else %}{{ handler.start_condition_type }}{% endif %}{% endif %}</td>
                     <td>{{ handler.case_type|default:"n/a" }}</td>
-                    <td><a href="{% url edit_complex domain handler.get_id %}"><span class="btn btn-primary">Edit</span></a></td>
+                    <td><a href="{% url 'edit_complex' domain handler.get_id %}"><span class="btn btn-primary">Edit</span></a></td>
                     <td>
                         <a class="btn btn-danger" data-toggle="modal" href="#delete_{{ handler.get_id }}"><i class="icon icon-white icon-remove"></i> Delete</a>
                         <div id="delete_{{ handler.get_id }}" class="modal hide fade">
@@ -44,7 +44,7 @@
                                 <a class="close" data-dismiss="modal">&times;</a>
                                 <h3>Delete Reminder Definition?</h3>
                             </div>
-                            <form class="form form-horizontal" name="delete_handler" action="{% url delete_reminder domain handler.get_id %}" method="post">
+                            <form class="form form-horizontal" name="delete_handler" action="{% url 'delete_reminder' domain handler.get_id %}" method="post">
                                 <div class="modal-body">
                                     <p>Are you sure you want to delete reminder definition "{{ handler.nickname }}"?</p>
                                 </div>
@@ -60,5 +60,5 @@
         </tbody>
     </table>
     <br />
-    <a href="{% url add_complex_reminder_schedule domain %}"><span class="btn btn-success"><i class="icon icon-white icon-plus"></i> New Reminder Definition</span></a>
+    <a href="{% url 'add_complex_reminder_schedule' domain %}"><span class="btn btn-success"><i class="icon icon-white icon-plus"></i> New Reminder Definition</span></a>
 {% endblock %}

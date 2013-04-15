@@ -13,8 +13,8 @@
 <script>
 
 var LOAD_LOCS_URL = '{{ api_root }}',
-    NEW_LOC_URL = '{% url create_location domain %}',
-    SYNC_FACILITIES_URL = '{% url sync_facilities_with_locations domain %}';
+    NEW_LOC_URL = '{% url 'create_location' domain %}',
+    SYNC_FACILITIES_URL = '{% url 'sync_facilities_with_locations' domain %}';
 
 
 var locs = {{ locations|JSON }};
@@ -22,7 +22,7 @@ var selected_loc = {{ selected_id|JSON }};
 var hierarchy = {{ hierarchy|JSON }};
 
 function loc_edit_url(loc_id) {
-    var template = '{% url edit_location domain "-locid-" %}';
+    var template = '{% url 'edit_location' domain "-locid-" %}';
     return template.replace('-locid-', loc_id);
 }
 

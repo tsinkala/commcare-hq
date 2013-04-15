@@ -31,9 +31,9 @@
 
 {% block centered-content %}
     <ul class="breadcrumb">
-        <li><a href="{% url view_app domain app.get_id %}">{% trans 'Application' %} "{{ app.name }}"</a> <span class="divider">&gt;</span></li>
-        <li><a href="{% url hqmedia_references domain app.get_id %}">{% trans 'Multimedia Reference Checker' %}</a> <span class="divider">&gt;</span></li>
-        <li class="active"><a href="{% url hqmedia_bulk_upload domain app.get_id %}">{% trans 'Bulk Upload' %}</a></li>
+        <li><a href="{% url 'view_app' domain app.get_id %}">{% trans 'Application' %} "{{ app.name }}"</a> <span class="divider">&gt;</span></li>
+        <li><a href="{% url 'hqmedia_references' domain app.get_id %}">{% trans 'Multimedia Reference Checker' %}</a> <span class="divider">&gt;</span></li>
+        <li class="active"><a href="{% url 'hqmedia_bulk_upload' domain app.get_id %}">{% trans 'Bulk Upload' %}</a></li>
     </ul>
     <div class="page-header">
         <h1><i class="icon icon-cloud-upload"></i> {% trans 'Multimedia Bulk Upload' %}</h1>

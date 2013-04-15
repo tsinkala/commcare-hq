@@ -12,12 +12,12 @@
 {% block user-view %}
     <ul class="nav nav-tabs" id="internal-settings-tabs">
         <li{% ifequal active "settings" %} class="active"{% endifequal %}>
-            <a href="{% url domain_internal_settings domain %}">
+            <a href="{% url 'domain_internal_settings' domain %}">
                 Settings
             </a>
         </li>
         <li{% ifequal active "calcs" %} class="active"{% endifequal %}>
-            <a href="{% url domain_internal_calculations domain %}">
+            <a href="{% url 'domain_internal_calculations' domain %}">
                 Calculated Properties
             </a>
         </li>

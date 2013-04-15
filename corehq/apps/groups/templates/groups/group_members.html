@@ -42,7 +42,7 @@
 
 {% block subsection-title %}
     <li>
-        <a href="{% url all_groups domain %}">Groups</a> <span class="divider">&gt;</span>
+        <a href="{% url 'all_groups' domain %}">Groups</a> <span class="divider">&gt;</span>
     </li>
     <li class="active">
         <a href="#">Editing Group "{{ group.name }}"</a>
@@ -55,7 +55,7 @@
         <h2>Group "{{ group.name }}" {% if group.case_sharing %} (Case Sharing){% endif %}</h2>
         <div class="btn-toolbar">
             <a href="#editGroupSettings" class="btn" data-toggle="modal"><i class="icon icon-pencil"></i> Edit Settings</a>
-            <form name="delete_group" style="margin-right: 45px;" class="pull-right" action="{% url delete_group domain group.get_id %}" method="post">
+            <form name="delete_group" style="margin-right: 45px;" class="pull-right" action="{% url 'delete_group' domain group.get_id %}" method="post">
                 <button class="btn btn-danger" type="submit"><i class="icon icon-white icon-remove"></i> Delete Group "{{ group.name }}"</button>
             </form>
         </div>
@@ -65,7 +65,7 @@
                 <a class="close" data-dismiss="modal">×</a>
                 <h3>Edit Settings for Group "{{ group.name }}"</h3>
             </div>
-            <form class="form form-horizontal" method="post" action="{% url edit_group domain group.get_id %}">
+            <form class="form form-horizontal" method="post" action="{% url 'edit_group' domain group.get_id %}">
                 <div class="modal-body">
                     <div class="control-group">
                         <label class="control-label" for="group-name-input">Group Name</label>
@@ -111,7 +111,7 @@
             <h3>{% commcare_user %}s in Group</h3>
             <div class="well">
                 {% for member in members %}
-                    <form class="group-bubble" name="leave_group" action="{% url leave_group domain group.get_id member.user_id %}" method="post">
+                    <form class="group-bubble" name="leave_group" action="{% url 'leave_group' domain group.get_id member.user_id %}" method="post">
                         <input type="hidden" name="redirect_url" value="group_members" />
                         <button type="submit" class="btn btn-primary"><i class="icon icon-white icon-minus"></i> {{ member.raw_username }}</button>
                     </form>
@@ -122,7 +122,7 @@
             <h3>Available {% commcare_user %}s</h3>
             <div class="well">
                 {% for nonmember in nonmembers %}
-                    <form class="group-bubble" name="join_group" action="{% url join_group domain group.get_id nonmember.get_id %}" method="post">
+                    <form class="group-bubble" name="join_group" action="{% url 'join_group' domain group.get_id nonmember.get_id %}" method="post">
                         <input type="hidden" name="redirect_url" value="group_members" />
                         <button type="submit" class="btn btn-success"><i class="icon icon-white icon-plus"></i> {{ nonmember.raw_username }}</button>
                     </form>
@@ -131,7 +131,7 @@
         </div>
     </div>
     <h3>{% trans "Group Data" %}</h3>
-    <form id="group-data-form" class="form form-horizontal" name="group-data-form" method="post" action="{% url update_group_data domain group.get_id %}">
+    <form id="group-data-form" class="form form-horizontal" name="group-data-form" method="post" action="{% url 'update_group_data' domain group.get_id %}">
         <input name="group-data" id="group-data" type="hidden" value='{{ group.metadata|JSON }}'></input>
         <div class="form-actions"><button type="submit" class="btn btn-primary">{% trans "Update Information" %}</button></div>
     </form>

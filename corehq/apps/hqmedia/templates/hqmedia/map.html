@@ -15,14 +15,14 @@
 
 {% block js-inline %} {{ block.super }}
     <script type="text/javascript">
-        var searchUrl = '{% url hqmedia_search domain app.get_id %}';
-        var chooseImageUrl = '{% url hqmedia_choose_media domain app.get_id %}';
+        var searchUrl = '{% url 'hqmedia_search' domain app.get_id %}';
+        var chooseImageUrl = '{% url 'hqmedia_choose_media' domain app.get_id %}';
         ko.applyBindings(new MultimediaMap({{ multimedia|JSON }}, "{{ STATIC_URL }}hqmedia/js"));
 
         var hqimage_uploader = new HQMediaUploader({
             uploadElem: '#hqmedia-upload-Image',
             fileFilters: new Array({description:"Images", extensions:"*.jpg;*.png;*.gif"}),
-            uploadURL: '{% url hqmedia_handle_uploaded domain app.get_id %}',
+            uploadURL: '{% url 'hqmedia_handle_uploaded' domain app.get_id %}',
             buttonImage: '{% static 'hqmedia/img/select_image_button.png' %}',
             onSuccess: function (event, data) {
                 console.log(data);
@@ -39,7 +39,7 @@
         var hqaudio_uploader = new HQMediaUploader({
             uploadElem: '#hqmedia-upload-Audio',
             fileFilters: new Array({description:"Audio", extensions:"*.mp3;*.wav"}),
-            uploadURL: '{% url hqmedia_handle_uploaded domain app.get_id %}',
+            uploadURL: '{% url 'hqmedia_handle_uploaded' domain app.get_id %}',
             buttonImage: '{% static 'hqmedia/img/select_audio_button.png' %}',
             onSuccess: function (event, data) {
                 console.log(data);
@@ -65,8 +65,8 @@
 
 {% block centered-content %}
 <ul class="breadcrumb">
-    <li><a href="{% url view_app domain app.get_id %}">{% trans 'Application' %} "{{ app.name }}"</a> <span class="divider">&gt;</span></li>
-    <li class="active"><a href="{% url hqmedia_references domain app.get_id %}">{% trans 'Multimedia Reference Checker' %}</a></li>
+    <li><a href="{% url 'view_app' domain app.get_id %}">{% trans 'Application' %} "{{ app.name }}"</a> <span class="divider">&gt;</span></li>
+    <li class="active"><a href="{% url 'hqmedia_references' domain app.get_id %}">{% trans 'Multimedia Reference Checker' %}</a></li>
 </ul>
 <div class="page-header">
     <h1>{% trans 'Multimedia Reference Checker' %}</h1>
@@ -83,7 +83,7 @@
             <p>{% blocktrans %}You can upload audio and image files individually for each form reference below.{% endblocktrans %}</p>
             <p>{% blocktrans %}Alternatively, you may use the multimedia bulk uploader and upload ZIP files of all your multimedia.
                 This option will compare the paths in form references with the paths of files in the ZIP. {% endblocktrans %}</p>
-            <a href="{% url hqmedia_bulk_upload domain app.get_id %}" class="btn btn-inverse"><i class="icon icon-cloud-upload"></i> {% trans 'Go to Bulk Upload' %}</a>
+            <a href="{% url 'hqmedia_bulk_upload' domain app.get_id %}" class="btn btn-inverse"><i class="icon icon-cloud-upload"></i> {% trans 'Go to Bulk Upload' %}</a>
         </div>
 
     </div>

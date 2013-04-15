@@ -75,9 +75,9 @@
 {% endblock %}
 
 {% block sidebar %}
-    {% url list_reminders domain as default_url %}
-    {% url scheduled_reminders domain as scheduled_reminders_url %}
-    {% url manage_keywords domain as keywords_url %}
+    {% url 'list_reminders' domain as default_url %}
+    {% url 'scheduled_reminders' domain as scheduled_reminders_url %}
+    {% url 'manage_keywords' domain as keywords_url %}
     <nav>
         <ul class="nav nav-list">
             <li class="nav-header">Reminders</li>
@@ -93,7 +93,7 @@
 {% block page-title %}
     <ul class="breadcrumb">
         <li>
-            <a href="{% url reminders_default domain %}"><strong>{% trans 'Reminders' %}</strong></a> <span class="divider">&gt;</span>
+            <a href="{% url 'reminders_default' domain %}"><strong>{% trans 'Reminders' %}</strong></a> <span class="divider">&gt;</span>
         </li>
         {% block subsection-title %}
         {% endblock %}

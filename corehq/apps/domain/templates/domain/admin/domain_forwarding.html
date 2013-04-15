@@ -3,7 +3,7 @@
 
 {% block subsection-title %}
     <li>
-        <a href="{% url domain_forwarding domain %}">Data Forwarding</a>
+        <a href="{% url 'domain_forwarding' domain %}">Data Forwarding</a>
     </li>
 {% endblock %}
 
@@ -34,7 +34,7 @@
         {% else %}
             <p>You haven't configured any urls to forward to yet.</p>
         {% endif %}
-        <a class="btn btn-success" href="{% url add_repeater domain cls %}"><i class="icon icon-white icon-plus"></i> Add a forwarding location</a>
+        <a class="btn btn-success" href="{% url 'add_repeater' domain cls %}"><i class="icon icon-white icon-plus"></i> Add a forwarding location</a>
     </div>
     {% endfor %}
 {% endblock %}

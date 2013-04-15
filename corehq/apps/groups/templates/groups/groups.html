@@ -3,7 +3,7 @@
 
 {% block subsection-title %}
     <li>
-        <a href="{% url all_groups domain %}">Groups</a> <span class="divider">&gt;</span>
+        <a href="{% url 'all_groups' domain %}">Groups</a> <span class="divider">&gt;</span>
     </li>
     <li class="active">
         <a href="#">Membership Info</a>
@@ -30,7 +30,7 @@
                             <a class="close" data-dismiss="modal">&times;</a>
                             <h3>Leave the group {{ group.name }}?</h3>
                         </div>
-                        <form name="leave_group" action="{% url leave_group domain group.get_id couch_user.couch_id %}" method="post">
+                        <form name="leave_group" action="{% url 'leave_group' domain group.get_id couch_user.couch_id %}" method="post">
                             <div class="modal-body">
                                 <p>Are you sure you want to have the user <strong>{{ couch_user.username }}</strong> leave the group <strong>{{ group.name }}</strong>?</p>
                             </div>
@@ -64,7 +64,7 @@
                         <a class="close" data-dismiss="modal">&times;</a>
                         <h3>Join the group {{ group.name }}?</h3>
                     </div>
-                    <form name="join_group" action="{% url join_group domain group.get_id couch_user.user_id %}" method="post">
+                    <form name="join_group" action="{% url 'join_group' domain group.get_id couch_user.user_id %}" method="post">
                         <div class="modal-body">
                             <p>Are you sure you want to have the user <strong>{{ couch_user.username }}</strong> join the group <strong>{{ group.name }}</strong>?</p>
                         </div>

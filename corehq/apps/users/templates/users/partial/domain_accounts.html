@@ -17,7 +17,7 @@
             {% if project %}
             {# domain refers to the current domain and is used within this loop #}
             <tr class="row-fluid">
-                <td class="span6"><a href="{% url domain_homepage project.name %}">{{ project.long_display_name }}</a></td>
+                <td class="span6"><a href="{% url 'domain_homepage' project.name %}">{{ project.long_display_name }}</a></td>
                 <td class="span6">
                     <a class="btn btn-danger" data-toggle="modal" href="#delete_domain_{{ project.name }}"><i class="icon icon-white icon-remove"></i> Remove Membership</a>
                     <div id="delete_domain_{{ project.name }}" class="modal hide fade">
@@ -25,7 +25,7 @@
                             <a class="close" data-dismiss="modal">&times;</a>
                             <h3>Remove Project Membership?</h3>
                         </div>
-                        <form class="form form-horizontal" name="delete_domain_membership" action="{% url delete_domain_membership domain couch_user.couch_id project.name %}" method="post">
+                        <form class="form form-horizontal" name="delete_domain_membership" action="{% url 'delete_domain_membership' domain couch_user.couch_id project.name %}" method="post">
                             <div class="modal-body">
                                 <p>Are you sure you want to remove {{ couch_user.html_username|safe }} from the project <strong>{{ project.long_display_name }}</strong>?</p>
                             </div>
@@ -43,7 +43,7 @@
 	</table>
 </div>
     <p>
-        <a class="btn btn-success" href="{% url registration_domain %}?referer={{ request.path }}"><i class="icon icon-white icon-plus"></i> Create a New Project</a>
+        <a class="btn btn-success" href="{% url 'registration_domain' %}?referer={{ request.path }}"><i class="icon icon-white icon-plus"></i> Create a New Project</a>
     </p>
 
 

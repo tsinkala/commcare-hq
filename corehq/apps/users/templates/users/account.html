@@ -72,9 +72,9 @@
     {% if couch_user.user_id != request.couch_user.user_id %}
         <li>
             {% if not couch_user.is_commcare_user %}
-                <a href="{% url web_users domain %}">{% hq_web_user %}s</a>
+                <a href="{% url 'web_users' domain %}">{% hq_web_user %}s</a>
             {% else %}
-                <a href="{% url commcare_users domain %}">{% commcare_user %}s</a>
+                <a href="{% url 'commcare_users' domain %}">{% commcare_user %}s</a>
             {% endif %}
             <span class="divider">&gt;</span>
         </li>
@@ -158,7 +158,7 @@
                                 {% ifnotequal couch_user.doc_type "WebUser" %}
 
                                   {% ifequal phone.status "unverified" %}
-                                <form method="post" action="{% url verify_phone_number domain couch_user.couch_id %}?phone_number={{phone.number|urlencode}}" style="display: inline;">
+                                <form method="post" action="{% url 'verify_phone_number' domain couch_user.couch_id %}?phone_number={{phone.number|urlencode}}" style="display: inline;">
                                     <button type="submit" title="Send a verification SMS to this phone. When the user replies to this SMS, the phone number will be verified." class="btn btn-primary"><i class="icon icon-signal icon-white"></i> Verify</button>
                                 </form>
                                   {% endifequal %}
@@ -225,7 +225,7 @@
                     <a class="close" data-dismiss="modal">&times;</a>
                     <h3>Reset Password for <small>{{ couch_user.html_username|safe }}</small></h3>
                 </div>
-                <form class="form form-horizontal reset-password-form" action="{% url change_password domain couch_user.user_id %}" method="post">
+                <form class="form form-horizontal reset-password-form" action="{% url 'change_password' domain couch_user.user_id %}" method="post">
                     <div class="modal-body">
                         {% include 'users/partial/reset_password.html' %}
                     </div>
@@ -250,7 +250,7 @@
                 <a class="close" data-dismiss="modal">&times;</a>
                 <h3>Delete +{{ phone_number }}?</h3>
             </div>
-            <form class="form form-horizontal hq-form" name="delete_phone_number" action="{% url delete_phone_number domain couch_user.couch_id %}?phone_number={{phone_number|urlencode}}" method="post">
+            <form class="form form-horizontal hq-form" name="delete_phone_number" action="{% url 'delete_phone_number' domain couch_user.couch_id %}?phone_number={{phone_number|urlencode}}" method="post">
                 <div class="modal-body">
                     <p>Are you sure you want to delete the phone number: "+{{ phone_number }}"?</p>
                 </div>
@@ -267,7 +267,7 @@
                 <a class="close" data-dismiss="modal">&times;</a>
                 <h3>Verify +{{ phone.number }}?</h3>
             </div>
-            <form class="form form-horizontal hq-form" name="reverify_phone_number" action="{% url verify_phone_number domain couch_user.couch_id %}?phone_number={{phone.number|urlencode}}" method="post">
+            <form class="form form-horizontal hq-form" name="reverify_phone_number" action="{% url 'verify_phone_number' domain couch_user.couch_id %}?phone_number={{phone.number|urlencode}}" method="post">
                 <div class="modal-body">
                     <p>A verification message has already been sent to this phone. The phone has not replied yet. Send again?</p>
                 </div>
@@ -284,7 +284,7 @@
             <a class="close" data-dismiss="modal">&times;</a>
             <h3>Delete {% commcare_user %} {{ couch_user.raw_username }}? <small>Permanent Action</small></h3>
         </div>
-        <form class="form form-horizontal" style="margin: 0; padding: 0" action="{% url delete_commcare_user domain couch_user.user_id %}" method="post">
+        <form class="form form-horizontal" style="margin: 0; padding: 0" action="{% url 'delete_commcare_user' domain couch_user.user_id %}" method="post">
             <div class="modal-body">
                 <p><span class="label label-warning">
                             <i class="icon-white icon-warning-sign"></i>
@@ -298,7 +298,7 @@
                     <li>Is permanent.</li>
                 </ul>
                 <p>If you ever want to use {{ couch_user.raw_username }}'s data in the future, we suggest that you use the <strong>Archive User</strong> option
-                    <a href="{% url commcare_users domain %}">here</a>.</p>
+                    <a href="{% url 'commcare_users' domain %}">here</a>.</p>
                 <p>If even after reading this you decide that you really want to delete this user and all of their data, type "I understand" into the box below.</p>
 
                 <input data-bind="value: signOff, valueUpdate: 'textchange'"/>

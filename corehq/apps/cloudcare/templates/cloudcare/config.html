@@ -2,7 +2,7 @@
 {% load hq_shared_tags %}
 {% block subsection-title %}
     <li class="active">
-        <a href="{% url cloudcare_app_settings domain %}">App Access</a>
+        <a href="{% url 'cloudcare_app_settings' domain %}">App Access</a>
     </li>
 {% endblock %}
 {% block js %}{{ block.super }}
