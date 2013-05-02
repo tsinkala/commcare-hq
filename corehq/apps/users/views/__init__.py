@@ -4,35 +4,36 @@ import json
 import re
 import urllib
 from datetime import datetime
+from couchdbkit.exceptions import ResourceNotFound
 
-from corehq.apps.registration.forms import NewWebUserRegistrationForm
-from corehq.apps.registration.utils import activate_new_user
 from dimagi.utils.couch.database import get_db
-from django.contrib.auth import logout
 from django.contrib.auth.forms import PasswordChangeForm, SetPasswordForm
 from django.contrib.auth.models import User
-from django.contrib.auth.views import redirect_to_login
 from django.core.urlresolvers import reverse
 from django.db import transaction
 from django.http import Http404, HttpResponseRedirect, HttpResponse, HttpResponseForbidden
+from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django_digest.decorators import httpdigest
 
-from dimagi.utils.web import render_to_response, json_response, get_ip
+from dimagi.utils.web import json_response, get_ip
 
 from corehq.apps.registration.forms import AdminInvitesUserForm
 from corehq.apps.prescriptions.models import Prescription
 from corehq.apps.domain.models import Domain
+from corehq.apps.hqwebapp.utils import InvitationView
 from corehq.apps.users.decorators import require_permission
 from corehq.apps.users.forms import UserForm, ProjectSettingsForm
-from corehq.apps.users.models import CouchUser, Invitation, CommCareUser, WebUser, \
-    RemoveWebUserRecord, UserRole, AdminUserRole
+from corehq.apps.users.models import CouchUser, CommCareUser, WebUser, \
+    DomainRemovalRecord, UserRole, AdminUserRole, DomainInvitation, PublicUser
 from corehq.apps.domain.decorators import login_and_domain_required, require_superuser, domain_admin_required
 from corehq.apps.orgs.models import Team
 from corehq.apps.reports.util import get_possible_reports
 from corehq.apps.sms import verify as smsverify
+
+from django.utils.translation import ugettext as _, ugettext_noop
 
 require_can_edit_web_users = require_permission('edit_web_users')
 require_can_edit_commcare_users = require_permission('edit_commcare_users')
@@ -64,10 +65,10 @@ def _users_context(request, domain):
     web_users = WebUser.by_domain(domain)
     teams = Team.get_by_domain(domain)
     for team in teams:
-        for member_id in team.member_ids:
-            team_user = WebUser.get(member_id)
-            if team_user.get_id not in [web_user.get_id for web_user in web_users]:
-                web_users.append(team_user)
+        for user in team.get_members():
+            if user.get_id not in [web_user.get_id for web_user in web_users]:
+                user.from_team = True
+                web_users.append(user)
 
     for user in [couch_user] + list(web_users):
         user.current_domain = domain
@@ -80,19 +81,21 @@ def _users_context(request, domain):
 
 @login_and_domain_required
 def users(request, domain):
-    redirect = _redirect_users_to(request, domain)
+    redirect = redirect_users_to(request, domain)
     if not redirect:
         raise Http404
     return HttpResponseRedirect(redirect)
 
-def _redirect_users_to(request, domain):
+def redirect_users_to(request, domain):
     redirect = None
-    user = CouchUser.get_by_user_id(request.couch_user._id, domain)
-    if user:
-        if user.has_permission(domain, 'edit_commcare_users'):
-            redirect = reverse("commcare_users", args=[domain])
-        else:
-            redirect = reverse("user_account", args=[domain, request.couch_user._id])
+    # good ol' public domain...
+    if not isinstance(request.couch_user, PublicUser):
+        user = CouchUser.get_by_user_id(request.couch_user._id, domain)
+        if user:
+            if user.has_permission(domain, 'edit_commcare_users'):
+                redirect = reverse("commcare_users", args=[domain])
+            else:
+                redirect = reverse("user_account", args=[domain, request.couch_user._id])
     return redirect
 
 @require_can_edit_web_users
@@ -106,7 +109,7 @@ def web_users(request, domain, template="users/web_users.html"):
         key = 'user-role:%s' % r.get_id if r.get_id else r.get_qualified_id()
         role_labels[key] = r.name
 
-    invitations = Invitation.by_domain(domain)
+    invitations = DomainInvitation.by_domain(domain)
     for invitation in invitations:
         invitation.role_label = role_labels.get(invitation.role, "")
 
@@ -116,7 +119,7 @@ def web_users(request, domain, template="users/web_users.html"):
         'report_list': get_possible_reports(domain),
         'invitations': invitations
     })
-    return render_to_response(request, template, context)
+    return render(request, template, context)
 
 @require_can_edit_web_users
 @require_POST
@@ -132,7 +135,7 @@ def remove_web_user(request, domain, couch_user_id):
 
 @require_can_edit_web_users
 def undo_remove_web_user(request, domain, record_id):
-    record = RemoveWebUserRecord.get(record_id)
+    record = DomainRemovalRecord.get(record_id)
     record.undo()
     messages.success(request, 'You have successfully restored {username}.'.format(
         username=WebUser.get_by_user_id(record.user_id).username
@@ -155,58 +158,33 @@ def post_user_role(request, domain):
     role.save()
     return json_response(role)
 
+class UserInvitationView(InvitationView):
+    inv_type = DomainInvitation
+    template = "users/accept_invite.html"
+    need = ["domain"]
+
+    def added_context(self):
+        return {'domain': self.domain}
+
+    def validate_invitation(self, invitation):
+        assert invitation.domain == self.domain
+
+    @property
+    def success_msg(self):
+        return "You have been added to the %s domain" % self.domain
+
+    @property
+    def redirect_to_on_success(self):
+        return reverse("domain_homepage", args=[self.domain,])
+
+    def invite(self, invitation, user):
+        user.add_domain_membership(domain=self.domain)
+        user.set_role(self.domain, invitation.role)
+        user.save()
+
 @transaction.commit_on_success
 def accept_invitation(request, domain, invitation_id):
-    if request.GET.get('switch') == 'true':
-        logout(request)
-        return redirect_to_login(request.path)
-    if request.GET.get('create') == 'true':
-        logout(request)
-        return HttpResponseRedirect(request.path)
-    invitation = Invitation.get(invitation_id)
-    assert(invitation.domain == domain)
-    if invitation.is_accepted:
-        messages.error(request, "Sorry, that invitation has already been used up. "
-                                "If you feel this is a mistake please ask the inviter for "
-                                "another invitation.")
-        return HttpResponseRedirect(reverse("login"))
-    if request.user.is_authenticated():
-        # if you are already authenticated, just add the domain to your
-        # list of domains
-        if request.couch_user.username != invitation.email:
-            messages.error(request, "The invited user %s and your user %s do not match!" % (invitation.email, request.couch_user.username))
-
-        if request.method == "POST":
-            couch_user = CouchUser.from_django_user(request.user)
-            couch_user.add_domain_membership(domain=domain)
-            couch_user.set_role(domain, invitation.role)
-            couch_user.save()
-            invitation.is_accepted = True
-            invitation.save()
-            messages.success(request, "You have been added to the %s domain" % domain)
-            return HttpResponseRedirect(reverse("domain_homepage", args=[domain,]))
-        else:
-            mobile_user = CouchUser.from_django_user(request.user).is_commcare_user()
-            return render_to_response(request, 'users/accept_invite.html', {'domain': domain,
-                                                                            'mobile_user': mobile_user,
-                                                                            "invited_user": invitation.email if request.couch_user.username != invitation.email else ""})
-    else:
-        # if you're not authenticated we need you to fill out your information
-        if request.method == "POST":
-            form = NewWebUserRegistrationForm(request.POST)
-            if form.is_valid():
-                user = activate_new_user(form, is_domain_admin=False, domain=invitation.domain)
-                user.set_role(domain, invitation.role)
-                user.save()
-                invitation.is_accepted = True
-                invitation.save()
-                messages.success(request, "User account for %s created! You may now login." % form.cleaned_data["email"])
-                return HttpResponseRedirect(reverse("login"))
-        else:
-            form = NewWebUserRegistrationForm(initial={'email': invitation.email})
-
-        return render_to_response(request, "users/accept_invite.html", {"form": form})
-
+    return UserInvitationView()(request, invitation_id, domain=domain)
 
 @require_can_edit_web_users
 def invite_web_user(request, domain, template="users/invite_web_user.html"):
@@ -222,7 +200,7 @@ def invite_web_user(request, domain, template="users/invite_web_user.html"):
             data["invited_by"] = request.couch_user.user_id
             data["invited_on"] = datetime.utcnow()
             data["domain"] = domain
-            invite = Invitation(**data)
+            invite = DomainInvitation(**data)
             invite.save()
             invite.send_activation_email()
             messages.success(request, "Invitation sent to %s" % invite.email)
@@ -233,12 +211,19 @@ def invite_web_user(request, domain, template="users/invite_web_user.html"):
     context.update(
         registration_form=form
     )
-    return render_to_response(request, template, context)
+    return render(request, template, context)
+
+def my_account(request, domain, couch_user_id=None):
+    return account(request, domain, request.couch_user._id)
 
 @require_permission_to_edit_user
 def account(request, domain, couch_user_id, template="users/account.html"):
     context = _users_context(request, domain)
-    couch_user = CouchUser.get_by_user_id(couch_user_id, domain)
+    try:
+        couch_user = CouchUser.get_by_user_id(couch_user_id, domain)
+    except ResourceNotFound:
+        raise Http404
+
     if not couch_user:
         raise Http404
 
@@ -255,7 +240,7 @@ def account(request, domain, couch_user_id, template="users/account.html"):
 
     if couch_user.is_deleted():
         if couch_user.is_commcare_user():
-            return render_to_response(request, 'users/deleted_account.html', context)
+            return render(request, 'users/deleted_account.html', context)
         else:
             raise Http404
 
@@ -282,9 +267,6 @@ def account(request, domain, couch_user_id, template="users/account.html"):
         # scheduled reports tab
     context.update({
         'phone_numbers_extended': couch_user.phone_numbers_extended(request.couch_user),
-
-        # for commcare-accounts tab
-        # "other_commcare_accounts": other_commcare_accounts,
     })
 
     #project settings tab
@@ -311,7 +293,7 @@ def account(request, domain, couch_user_id, template="users/account.html"):
 
     # for basic tab
     context.update(_handle_user_form(request, domain, couch_user))
-    return render_to_response(request, template, context)
+    return render(request, template, context)
 
 
 
@@ -388,7 +370,7 @@ def domain_accounts(request, domain, couch_user_id, template="users/domain_accou
         couch_user.save()
         messages.success(request,'Domain added')
     context.update({"user": request.user})
-    return render_to_response(request, template, context)
+    return render(request, template, context)
 
 @require_POST
 @require_superuser
@@ -400,12 +382,41 @@ def add_domain_membership(request, domain, couch_user_id, domain_name):
     return HttpResponseRedirect(reverse("user_account", args=(domain, couch_user_id)))
 
 @require_POST
-@require_superuser
 def delete_domain_membership(request, domain, couch_user_id, domain_name):
-    user = WebUser.get_by_user_id(couch_user_id, domain)
-    user.delete_domain_membership(domain_name)
-    user.save()
-    return HttpResponseRedirect(reverse("user_account", args=(domain, couch_user_id )))
+    removing_self = request.couch_user.get_id == couch_user_id
+    user = WebUser.get_by_user_id(couch_user_id, domain_name)
+
+    # don't let a user remove another user's domain membership if they're not the admin of the domain or a superuser
+    if not removing_self and not (request.couch_user.is_domain_admin(domain_name) or request.couch_user.is_superuser):
+        messages.error(request, _("You don't have the permission to remove this user's membership"))
+
+    elif user.is_domain_admin(domain_name): # don't let a domain admin be removed from the domain
+        if removing_self:
+            error_msg = ugettext_noop("Unable remove membership because you are the admin of %s" % domain_name)
+        else:
+            error_msg = ugettext_noop("Unable remove membership because %(user)s is the admin of %(domain)s" % {
+                'user': user.username,
+                'domain': domain_name
+            })
+        messages.error(request, error_msg)
+        
+    else:
+        user.delete_domain_membership(domain_name)
+        user.save()
+
+        if removing_self:
+            success_msg = ugettext_noop("You are no longer a part of the %s project space" % domain_name)
+        else:
+            success_msg = ugettext_noop("%(user)s is no longer a part of the %(domain)s project space" % {
+                'user': user.username,
+                'domain': domain_name
+            })
+        messages.success(request, success_msg)
+
+        if removing_self and not user.is_member_of(domain):
+            return HttpResponseRedirect(reverse("homepage"))
+
+    return HttpResponseRedirect(reverse("user_account", args=(domain, couch_user_id)))
 
 @login_and_domain_required
 def change_password(request, domain, login_id, template="users/partial/reset_password.html"):
@@ -448,11 +459,10 @@ def change_my_password(request, domain, template="users/change_my_password.html"
     context.update({
         'form': form,
     })
-    return render_to_response(request, template, context)
+    return render(request, template, context)
 
 
 def _handle_user_form(request, domain, couch_user=None):
-    from corehq.apps.reports.util import get_possible_reports
     context = {}
     if couch_user:
         create_user = False
@@ -504,7 +514,7 @@ def _handle_user_form(request, domain, couch_user=None):
                         initial = role.get_qualified_id()
                     form.initial['role'] = initial
                 else:
-                    form.initial['role'] = couch_user.get_role(domain).get_qualified_id() or ''
+                    form.initial['role'] = couch_user.get_role(domain, include_teams=False).get_qualified_id() or ''
 
     if not can_change_admin_status:
         del form.fields['role']
@@ -548,7 +558,7 @@ def user_domain_transfer(request, domain, prescription, template="users/domain_t
         from corehq.apps.app_manager.models import VersionedDoc
         # apps from the *target* domain
         apps = VersionedDoc.view('app_manager/applications_brief', startkey=[target_domain], endkey=[target_domain, {}])
-        # useres from the *originating* domain
+        # users from the *originating* domain
         users = list(CommCareUser.by_domain(domain))
         users.extend(CommCareUser.by_domain(domain, is_active=False))
         context = _users_context(request, domain)
@@ -557,7 +567,7 @@ def user_domain_transfer(request, domain, prescription, template="users/domain_t
             'commcare_users': users,
             'target_domain': target_domain
         })
-        return render_to_response(request, template, context)
+        return render(request, template, context)
 
 @require_superuser
 def audit_logs(request, domain):

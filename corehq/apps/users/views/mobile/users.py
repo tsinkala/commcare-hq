@@ -1,33 +1,38 @@
 import json
-from couchexport.models import Format
 import csv
 import io
 import uuid
-import logging
-from django.template.context import RequestContext
-from django.template.loader import render_to_string
-import math
-from openpyxl.shared.exc import InvalidFileException
+from django.utils.safestring import mark_safe
 
+from openpyxl.shared.exc import InvalidFileException
 from django.core.urlresolvers import reverse
-from django.http import Http404, HttpResponseRedirect, HttpResponse, HttpResponseForbidden, HttpResponseBadRequest
+from django.http import HttpResponseRedirect, HttpResponse,\
+    HttpResponseForbidden, HttpResponseBadRequest
 from django.utils.decorators import method_decorator
+from django.utils.translation import ugettext as _
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.views.generic.base import TemplateView
+from django.shortcuts import render
 
+from couchexport.models import Format
 from corehq.apps.users.forms import CommCareAccountForm
 from corehq.apps.users.models import CommCareUser
 from corehq.apps.groups.models import Group
-from corehq.apps.users.bulkupload import create_or_update_users_and_groups, check_headers, dump_users_and_groups
+from corehq.apps.users.bulkupload import create_or_update_users_and_groups,\
+    check_headers, dump_users_and_groups, GroupNameError
 from corehq.apps.users.tasks import bulk_upload_async
-from corehq.apps.users.views import _users_context, require_can_edit_web_users, require_can_edit_commcare_users
-
-from dimagi.utils.web import render_to_response, get_url_base
+from corehq.apps.users.views import (_users_context, require_can_edit_web_users,
+    require_can_edit_commcare_users, account as users_account)
+from dimagi.utils.html import format_html
 from dimagi.utils.decorators.view import get_file
-from dimagi.utils.excel import Excel2007DictReader, WorkbookJSONReader
+from dimagi.utils.excel import WorkbookJSONReader, WorksheetNotFound, JSONReaderError
+
 
 DEFAULT_USER_LIST_LIMIT = 10
+
+def account(*args, **kwargs):
+    return users_account(*args, **kwargs)
 
 @require_can_edit_commcare_users
 def base_view(request, domain, template="users/mobile/users_list.html"):
@@ -53,7 +58,7 @@ def base_view(request, domain, template="users/mobile/users_list.html"):
         show_case_sharing=request.project.case_sharing_included(),
         pagination_limit_options=range(DEFAULT_USER_LIST_LIMIT, 51, DEFAULT_USER_LIST_LIMIT)
     )
-    return render_to_response(request, template, context)
+    return render(request, template, context)
 
 @require_can_edit_commcare_users
 def user_list(request, domain):
@@ -80,7 +85,7 @@ def user_list(request, domain):
         user_data = dict(
             user_id=user.user_id,
             status="" if user.is_active else "Archived",
-            edit_url=reverse('user_account', args=[domain, user.user_id]),
+            edit_url=reverse('commcare_user_account', args=[domain, user.user_id]),
             username=user.raw_username,
             full_name=user.full_name,
             joined_on=user.date_joined.strftime("%d %b %Y"),
@@ -196,7 +201,8 @@ def add_commcare_account(request, domain, template="users/add_commcare_account.h
         form = CommCareAccountForm()
     context.update(form=form)
     context.update(only_numeric=(request.project.password_format() == 'n'))
-    return render_to_response(request, template, context)
+    return render(request, template, context)
+
 
 class UploadCommCareUsers(TemplateView):
 
@@ -211,30 +217,37 @@ class UploadCommCareUsers(TemplateView):
     @method_decorator(get_file)
     def post(self, request):
         """View's dispatch method automatically calls this"""
+        redirect = request.POST.get('redirect')
 
         try:
             self.workbook = WorkbookJSONReader(request.file)
         except InvalidFileException:
             try:
-                csv.DictReader(io.StringIO(request.file.read().decode('ascii'), newline=None))
+                csv.DictReader(io.StringIO(request.file.read().decode('ascii'),
+                                           newline=None))
                 return HttpResponseBadRequest(
                     "CommCare HQ no longer supports CSV upload. "
-                    "Please convert to Excel 2007 or higher (.xlsx) and try again."
+                    "Please convert to Excel 2007 or higher (.xlsx) "
+                    "and try again."
                 )
             except UnicodeDecodeError:
                 return HttpResponseBadRequest("Unrecognized format")
+        except JSONReaderError as e:
+            messages.error(request,
+                           'Your upload was unsuccessful. %s' % e.message)
+            return HttpResponseRedirect(redirect)
 
         try:
             self.user_specs = self.workbook.get_worksheet(title='users')
-        except KeyError:
+        except WorksheetNotFound:
             try:
                 self.user_specs = self.workbook.get_worksheet()
-            except IndexError:
+            except WorksheetNotFound:
                 return HttpResponseBadRequest("Workbook has no worksheets")
 
         try:
             self.group_specs = self.workbook.get_worksheet(title='groups')
-        except KeyError:
+        except WorksheetNotFound:
             self.group_specs = []
 
         try:
@@ -262,7 +275,6 @@ class UploadCommCareUsers(TemplateView):
             for row in ret["rows"]:
                 response_rows.append(row)
 
-        redirect = request.POST.get('redirect')
         if redirect:
             if not async:
                 messages.success(request, 'Your bulk user upload is complete!')
@@ -292,6 +304,35 @@ def download_commcare_users(request, domain):
     response = HttpResponse(mimetype=Format.from_format('xlsx').mimetype)
     response['Content-Disposition'] = 'attachment; filename=%s_users.xlsx' % domain
 
-    dump_users_and_groups(response, domain)
+    try:
+        dump_users_and_groups(response, domain)
+    except GroupNameError as e:
+        group_urls = [
+            reverse('group_members', args=[domain, group.get_id])
+            for group in e.blank_groups
+        ]
+
+        def make_link(url, i):
+            return format_html(
+                '<a href="{}" target="_blank">{}</a>',
+                url,
+                _('Blank Group %s') % i
+            )
+
+        group_links = [
+            make_link(url, i + 1)
+            for i, url in enumerate(group_urls)
+        ]
+        msg = format_html(
+            _(
+                'The following groups have no name. '
+                'Please name them before continuing: {}'
+            ),
+            mark_safe(', '.join(group_links))
+        )
+        messages.error(request, msg, extra_tags='html')
+        return HttpResponseRedirect(
+            reverse('upload_commcare_users', args=[domain])
+        )
 
     return response

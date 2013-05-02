@@ -1,11 +1,13 @@
 from StringIO import StringIO
 import datetime
-from celery.log import get_task_logger
+from celery.utils.log import get_task_logger
 from django.core.urlresolvers import reverse
 from django.http import HttpResponse, Http404
 from django.template.context import RequestContext
 import json
 from django.template.loader import render_to_string
+from django.shortcuts import render
+
 import pytz
 from corehq.apps.reports.models import ReportConfig
 from corehq.apps.reports import util
@@ -16,10 +18,9 @@ from couchexport.shortcuts import export_response
 from dimagi.utils.couch.pagination import DatatablesParams
 from dimagi.utils.decorators.memoized import memoized
 from dimagi.utils.modules import to_function
-from dimagi.utils.web import render_to_response, json_request
+from dimagi.utils.web import json_request
 from dimagi.utils.parsing import string_to_boolean
 from corehq.apps.reports.cache import CacheableRequestMixIn, request_cache
-
 
 class GenericReportView(CacheableRequestMixIn):
     """
@@ -63,7 +64,6 @@ class GenericReportView(CacheableRequestMixIn):
     name = None         # string. the name of the report that shows up in the heading and the
     slug = None         # string. the report_slug_in_the_url
     section_name = None # string. ex: "Reports"
-    app_slug = None     # string. ex: 'reports' or 'manage'
     dispatcher = None   # ReportDispatcher subclass
 
     # Code can expect `fields` to be an iterable even when empty (never None)
@@ -132,7 +132,7 @@ class GenericReportView(CacheableRequestMixIn):
         """
             For pickling the report when passing it to Celery.
         """
-        logging = get_task_logger() # logging is likely to happen within celery.
+        logging = get_task_logger(__name__) # logging is likely to happen within celery.
         # pickle only what the report needs from the request object
 
         request = dict(
@@ -163,7 +163,7 @@ class GenericReportView(CacheableRequestMixIn):
         """
             For unpickling a pickled report.
         """
-        logging = get_task_logger() # logging lis likely to happen within celery.
+        logging = get_task_logger(__name__) # logging lis likely to happen within celery.
         self.domain = state.get('domain')
         self.context = state.get('context', {})
 
@@ -228,7 +228,7 @@ class GenericReportView(CacheableRequestMixIn):
     @property
     @memoized
     def template_base(self):
-        return self.base_template or "%s/base_template.html" % self.app_slug
+        return self.base_template
 
     @property
     @memoized
@@ -240,13 +240,14 @@ class GenericReportView(CacheableRequestMixIn):
     def template_async_base(self):
         return ((self.base_template_async or "reports/async/default.html")
                                         if self.asynchronous else self.template_base)
-
-    _template_report = None
     @property
+    @memoized
     def template_report(self):
-        if self._template_report is None:
-            self._template_report = self.report_template_path or "reports/async/basic.html"
-        return self._template_report
+        original_template = self.report_template_path or "reports/async/basic.html"
+        if self.is_rendered_as_email:
+            self.context.update(original_template=original_template)
+            return "reports/async/email_report.html"
+        return original_template
 
     @property
     @memoized
@@ -316,17 +317,6 @@ class GenericReportView(CacheableRequestMixIn):
         return None
 
     @property
-    def show_subsection_navigation(self):
-        """
-            Override this to show subsection navigation directly under the top navigation bar.
-            Use the subsection-navigation block in the template to specify what the subsection navigation should
-            look like.
-
-            First use of this is to separate ADM and Project Reports in the Reports tab.
-        """
-        return False
-
-    @property
     def template_context(self):
         """
             Intention: Override if necessary.
@@ -380,8 +370,12 @@ class GenericReportView(CacheableRequestMixIn):
         """
         Whether a report needs filters. A shortcut for hide_filters is false and 
         filter_set is false.
+        If no filters are used, False is automatically returned.
         """
-        return not self.hide_filters and not self.filter_set
+        if len(self.fields) == 0:
+            return False
+        else:
+            return not self.hide_filters and not self.filter_set
     
     def _validate_context_dict(self, property):
         if not isinstance(property, dict):
@@ -407,7 +401,6 @@ class GenericReportView(CacheableRequestMixIn):
                 section_name=self.section_name,
                 slug=self.slug,
                 sub_slug=None,
-                app_slug=self.app_slug,
                 type=self.dispatcher.prefix,
                 url_root=self.url_root,
                 is_async=self.asynchronous,
@@ -465,9 +458,6 @@ class GenericReportView(CacheableRequestMixIn):
                     zone=self.timezone.zone
                 ))
         self.context.update(self._validate_context_dict(self.template_context))
-        self.context['report'].update(
-            show_subsection_navigation=self.show_subsection_navigation
-        )
 
     def update_report_context(self):
         """
@@ -483,10 +473,6 @@ class GenericReportView(CacheableRequestMixIn):
         )
         self.context.update(self._validate_context_dict(self.report_context))
 
-    def generate_cache_key(self, func_name):
-        raise NotImplementedError("This is very broken!")
-        return "%s:%s" % (self.__class__.__name__, func_name)
-
     @property
     @request_cache("default")
     def view_response(self):
@@ -501,7 +487,7 @@ class GenericReportView(CacheableRequestMixIn):
             self.update_report_context()
             template = self.template_report
         self.set_announcements()
-        return render_to_response(self.request, template, self.context)
+        return render(self.request, template, self.context)
 
     
     @property
@@ -518,9 +504,7 @@ class GenericReportView(CacheableRequestMixIn):
                                       "to the report config.")
         async_context = self._async_context()
         self.context.update(async_context)
-        return render_to_response(self.request, 
-                                  self.mobile_template_base,
-                                  self.context)
+        return render(self.request, self.mobile_template_base, self.context)
     
     @property
     @request_cache("email")
@@ -530,8 +514,6 @@ class GenericReportView(CacheableRequestMixIn):
         content of the report. It is intended for use by the report scheduler.
         """
         self.is_rendered_as_email = True
-        self.context.update(original_template=self.template_report)
-        self._template_report = "reports/async/email_report.html"
         return self.async_response
 
     @property
@@ -541,7 +523,7 @@ class GenericReportView(CacheableRequestMixIn):
             Intention: Not to be overridden in general.
             Renders the asynchronous view of the report template, returned as json.
         """
-        return HttpResponse(json.dumps(self._async_context()))
+        return HttpResponse(json.dumps(self._async_context()), content_type='application/json')
     
     def _async_context(self):
         self.update_template_context()
@@ -589,7 +571,7 @@ class GenericReportView(CacheableRequestMixIn):
             Intention: Not to be overridden in general.
             Renders the json version for the report, if available.
         """
-        return HttpResponse(json.dumps(self.json_dict))
+        return HttpResponse(json.dumps(self.json_dict), content_type="application/json")
 
     @property
     @request_cache("export")
@@ -610,19 +592,12 @@ class GenericReportView(CacheableRequestMixIn):
         """
         raise Http404
 
-    @property
-    def clear_cache_response(self):
-        renderings = self.dispatcher.allowed_renderings()
-        try:
-            del renderings[renderings.index('clear_cache')]
-        except Exception:
-            pass
-        for render in renderings:
-            cache_key = self.generate_cache_key("%s_response" % render)
-        return HttpResponse("Clearing cache")
-
     @classmethod
     def get_url(cls, domain=None, render_as=None, **kwargs):
+        # NOTE: I'm pretty sure this doesn't work if you ever pass in render_as
+        # but leaving as is for now, as it should be obvious as soon as that 
+        # breaks something
+
         if isinstance(cls, cls):
             domain = getattr(cls, 'domain')
             render_as = getattr(cls, 'rendered_as')
@@ -635,7 +610,7 @@ class GenericReportView(CacheableRequestMixIn):
         return reverse(cls.dispatcher.name(), args=url_args+[cls.slug])
 
     @classmethod
-    def show_in_navigation(cls, request, domain=None):
+    def show_in_navigation(cls, domain=None, project=None, user=None):
         return True
 
 class GenericTabularReport(GenericReportView):
@@ -901,3 +876,75 @@ class SummaryTablularReport(GenericTabularReport):
         headers = list(self.headers)
         assert (len(self.data) == len(headers))
         return zip(headers, self.data)
+
+class ProjectInspectionReportParamsMixin(object):
+    @property
+    def shared_pagination_GET_params(self):
+        # This was moved from ProjectInspectionReport so that it could be included in CaseReassignmentInterface too
+        # I tried a number of other inheritance schemes, but none of them worked because of the already
+        # complicated multiple-inheritance chain
+        # todo: group this kind of stuff with the field object in a comprehensive field refactor
+
+        return [dict(name='individual', value=self.individual),
+                dict(name='group', value=self.group_id),
+                dict(name='case_type', value=self.case_type),
+                dict(name='ufilter', value=[f.type for f in self.user_filter if f.show])]
+
+
+class ElasticTabularReport(GenericTabularReport):
+    """
+    Tabular report that provides framework for doing elasticsearch backed tabular reports.
+
+    Main thing of interest is that you need es_results to hit ES, and that your datatable headers
+    must use prop_name kwarg to enable column sorting.
+    """
+    default_sort = None
+
+    @property
+    def es_results(self):
+        """
+        Main meat - run your ES query and return the raw results here.
+        """
+        raise NotImplementedError("ES Query not implemented")
+
+    def get_sorting_block(self):
+        res = []
+        #the NUMBER of cols sorting
+        sort_cols = int(self.request.GET.get('iSortingCols', 0))
+        if sort_cols > 0:
+            for x in range(sort_cols):
+                col_key = 'iSortCol_%d' % x
+                sort_dir = self.request.GET['sSortDir_%d' % x]
+                col_id = int(self.request.GET[col_key])
+                col = self.headers.header[col_id]
+                if col.prop_name is not None:
+                    sort_dict = {col.prop_name: sort_dir}
+                    res.append(sort_dict)
+        if len(res) == 0 and self.default_sort is not None:
+            res.append(self.default_sort)
+        return res
+
+    @property
+    def total_records(self):
+        """
+            Override for pagination slice from ES
+            Returns an integer.
+        """
+        res = self.es_results
+        if res is not None:
+            return res['hits'].get('total', 0)
+        else:
+            return 0
+
+
+class ElasticProjectInspectionReport(ProjectInspectionReportParamsMixin, ElasticTabularReport):
+    @property
+    def shared_pagination_GET_params(self):
+        """
+        Override the params and applies all the params of the originating view to the GET
+        so as to get sorting working correctly with the context of the GET params
+        """
+        ret = super(ElasticTabularReport, self).shared_pagination_GET_params
+        for k, v in self.request.GET.items():
+            ret.append(dict(name=k, value=v))
+        return ret

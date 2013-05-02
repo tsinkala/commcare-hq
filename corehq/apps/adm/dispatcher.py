@@ -3,10 +3,7 @@ from corehq.apps.reports.dispatcher import ProjectReportDispatcher
 
 class ADMSectionDispatcher(ProjectReportDispatcher):
     prefix = 'adm_section'
-    map_name = 'ADM_SECTION_MAP'
-
-    def dispatch(self, request, *args, **kwargs):
-        return super(ADMSectionDispatcher, self).dispatch(request, *args, **kwargs)
+    map_name = 'ADM_SECTIONS'
 
     @classmethod
     def pattern(cls):
@@ -15,4 +12,4 @@ class ADMSectionDispatcher(ProjectReportDispatcher):
 
 class ADMAdminInterfaceDispatcher(BaseCRUDAdminInterfaceDispatcher):
     prefix = 'adm_admin_interface'
-    map_name = "ADM_ADMIN_INTERFACE_MAP"
+    map_name = "ADM_ADMIN_INTERFACES"

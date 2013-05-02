@@ -1,21 +1,24 @@
 import json
-import logging
-import csv
-from corehq.apps.domain.decorators import login_and_domain_required
+from couchdbkit import ResourceNotFound
+
+from django.contrib import messages
+from django.core.urlresolvers import reverse
+from django.http import HttpResponseBadRequest, HttpResponseRedirect, Http404
+from django.utils.decorators import method_decorator
+from django.views.generic.base import TemplateView
+from django.shortcuts import render
+
 from corehq.apps.fixtures.models import FixtureDataType, FixtureDataItem
 from corehq.apps.groups.models import Group
+from corehq.apps.users.bulkupload import GroupMemoizer
 from corehq.apps.users.decorators import require_permission
 from corehq.apps.users.models import CommCareUser, Permissions
 from corehq.apps.users.util import normalize_username
-from dimagi.utils.excel import WorkbookJSONReader
+from dimagi.utils.couch.bulk import CouchTransaction
+from dimagi.utils.excel import WorkbookJSONReader, WorksheetNotFound
 from dimagi.utils.logging import notify_exception
-from dimagi.utils.web import json_response, render_to_response
+from dimagi.utils.web import json_response
 from dimagi.utils.decorators.view import get_file
-from django.contrib import messages
-from django.core.urlresolvers import reverse
-from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseRedirect
-from django.utils.decorators import method_decorator
-from django.views.generic.base import TemplateView
 
 
 require_can_edit_fixtures = require_permission(Permissions.edit_data)
@@ -46,7 +49,10 @@ def _to_kwargs(req):
 def data_types(request, domain, data_type_id):
     
     if data_type_id:
-        data_type = FixtureDataType.get(data_type_id)
+        try:
+            data_type = FixtureDataType.get(data_type_id)
+        except ResourceNotFound:
+            raise Http404()
 
         assert(data_type.doc_type == FixtureDataType._doc_type)
         assert(data_type.domain == domain)
@@ -62,7 +68,8 @@ def data_types(request, domain, data_type_id):
             return json_response(strip_json(data_type))
 
         elif request.method == 'DELETE':
-            data_type.recursive_delete()
+            with CouchTransaction() as transaction:
+                data_type.recursive_delete(transaction)
             return json_response({})
 
     elif data_type_id is None:
@@ -76,8 +83,9 @@ def data_types(request, domain, data_type_id):
             return json_response([strip_json(x) for x in FixtureDataType.by_domain(domain)])
 
         elif request.method == 'DELETE':
-            for data_type in FixtureDataType.by_domain(domain):
-                data_type.recursive_delete()
+            with CouchTransaction() as transaction:
+                for data_type in FixtureDataType.by_domain(domain):
+                    data_type.recursive_delete(transaction)
             return json_response({})
 
     return HttpResponseBadRequest()
@@ -109,7 +117,10 @@ def data_items(request, domain, data_type_id, data_item_id):
     elif request.method == 'GET' and data_item_id is None:
         return json_response([prepare_item(x) for x in FixtureDataItem.by_data_type(domain, data_type_id)])
     elif request.method == 'GET' and data_item_id:
-        o = FixtureDataItem.get(data_item_id)
+        try:
+            o = FixtureDataItem.get(data_item_id)
+        except ResourceNotFound:
+            raise Http404()
         assert(o.domain == domain and o.data_type.get_id == data_type_id)
         return json_response(prepare_item(o))
     elif request.method == 'PUT' and data_item_id:
@@ -122,7 +133,8 @@ def data_items(request, domain, data_type_id, data_item_id):
     elif request.method == 'DELETE' and data_item_id:
         o = FixtureDataItem.get(data_item_id)
         assert(o.domain == domain and o.data_type.get_id == data_type_id)
-        o.delete_recursive()
+        with CouchTransaction() as transaction:
+            o.recursive_delete(transaction)
         return json_response({})
     else:
         return HttpResponseBadRequest()
@@ -181,7 +193,7 @@ def users(request, domain):
 
 @require_can_edit_fixtures
 def view(request, domain, template='fixtures/view.html'):
-    return render_to_response(request, template, {
+    return render(request, template, {
         'domain': domain
     })
 
@@ -200,24 +212,49 @@ class UploadItemLists(TemplateView):
     def post(self, request):
         """View's dispatch method automatically calls this"""
 
+        def error_redirect():
+            return HttpResponseRedirect(reverse('upload_item_lists', args=[self.domain]))
+
         try:
             workbook = WorkbookJSONReader(request.file)
         except AttributeError:
-            return HttpResponseBadRequest("Error processing your Excel (.xlsx) file")
+            messages.error(request, "Error processing your Excel (.xlsx) file")
+            return error_redirect()
+
+
 
         try:
-            data_types = workbook.get_worksheet(title='types')
-        except KeyError:
-            return HttpResponseBadRequest("Workbook does not have a sheet called 'types'")
-        try:
+            self._run_upload(request, workbook)
+        except WorksheetNotFound as e:
+            messages.error(request, "Workbook does not have a sheet called '%s'" % e.title)
+            return error_redirect()
+        except Exception as e:
+            notify_exception(request)
+            messages.error(request, "Fixture upload could not complete due to the following error: %s" % e)
+            return error_redirect()
+
+        return HttpResponseRedirect(reverse('fixture_view', args=[self.domain]))
+
+    def _run_upload(self, request, workbook):
+        group_memoizer = GroupMemoizer(self.domain)
+
+        data_types = workbook.get_worksheet(title='types')
+
+        def _get_or_raise(container, attr, message):
+            try:
+                return container[attr]
+            except KeyError:
+                raise Exception(message.format(attr=attr))
+        with CouchTransaction() as transaction:
             for dt in data_types:
+                err_msg = "Workbook 'types' has no column '{attr}'"
                 data_type = FixtureDataType(
                     domain=self.domain,
-                    name=dt['name'],
-                    tag=dt['tag'],
-                    fields=dt['field'],
+                    name=_get_or_raise(dt, 'name', err_msg),
+                    tag=_get_or_raise(dt, 'tag', err_msg),
+                    fields=_get_or_raise(dt, 'field', err_msg),
                 )
-                data_type.save()
+                transaction.save(data_type)
                 data_items = workbook.get_worksheet(data_type.tag)
                 for di in data_items:
                     data_item = FixtureDataItem(
@@ -225,11 +262,11 @@ class UploadItemLists(TemplateView):
                         data_type_id=data_type.get_id,
                         fields=di['field']
                     )
-                    data_item.save()
+                    transaction.save(data_item)
                     for group_name in di.get('group', []):
-                        group = Group.by_name(self.domain, group_name)
+                        group = group_memoizer.by_name(group_name)
                         if group:
-                            data_item.add_group(group)
+                            data_item.add_group(group, transaction=transaction)
                         else:
                             messages.error(request, "Unknown group: %s" % group_name)
                     for raw_username in di.get('user', []):
@@ -239,11 +276,10 @@ class UploadItemLists(TemplateView):
                             data_item.add_user(user)
                         else:
                             messages.error(request, "Unknown user: %s" % raw_username)
-        except Exception as e:
-            notify_exception(request)
-            messages.error(request, "Fixture upload could not complete due to the following error: %s" % e)
+            for data_type in transaction.preview_save(cls=FixtureDataType):
+                for duplicate in FixtureDataType.by_domain_tag(domain=self.domain, tag=data_type.tag):
+                    duplicate.recursive_delete(transaction)
 
-        return HttpResponseRedirect(reverse('fixture_view', args=[self.domain]))
 
     @method_decorator(require_can_edit_fixtures)
     def dispatch(self, request, domain, *args, **kwargs):

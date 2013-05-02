@@ -12,8 +12,9 @@ function HQReportDataTables(options) {
     self.customSort = options.customSort;
     self.ajaxParams = options.ajaxParams || new Object();
     self.ajaxSource = options.ajaxSource;
-    self.loadingText = options.loadingText || "Loading...";
+    self.loadingText = options.loadingText || "Loading <img src='/static/hqwebapp/img/ajax-loader.gif' alt='loading indicator' />";
     self.emptyText = options.emptyText || "No data available to display. Please try changing your filters.";
+    self.errorText = options.errorText || "<span class='label label-important'>Sorry!</span> There was an error with your query, it has been logged, please try another query.";
     self.fixColumns = !!(options.fixColumns);
     self.fixColsNumLeft = options.fixColsNumLeft || 1;
     self.fixColsWidth = options.fixColsWidth || 100;
@@ -39,15 +40,13 @@ function HQReportDataTables(options) {
                 sPaginationType: self.paginationType,
                 iDisplayLength: self.defaultRows,
                 bAutoWidth: self.autoWidth,
-                sScrollX: "100%",
-                "sScrollXInner": "150%",
-                "bScrollCollapse": true,
+                sScrollX: "100%"
             };
 
             if(self.ajaxSource) {
                 params.bServerSide = true;
+                params.bProcessing = true;
                 params.sAjaxSource = self.ajaxSource;
-                params.bSort = false;
                 params.bFilter = $(this).data('filter') || false;
                 params.fnServerParams = function ( aoData ) {
                     for (var p in self.ajaxParams) {
@@ -63,6 +62,18 @@ function HQReportDataTables(options) {
                             aoData.push(currentParam);
                         }
                     }
+                };
+                params.fnServerData = function ( sSource, aoData, fnCallback, oSettings ) {
+                    oSettings.jqXHR = $.ajax( {
+                        "url": sSource,
+                        "data": aoData,
+                        "success": fnCallback,
+                        "error": function(data) {
+                            $(".dataTables_processing").hide();
+                            $(".dataTables_empty").html(self.errorText);
+                            $(".dataTables_empty").show();
+                        }
+                    } );
                 };
             }
             params.oLanguage = {
@@ -92,6 +103,9 @@ function HQReportDataTables(options) {
                     iLeftColumns: self.fixColsNumLeft,
                     iLeftWidth: self.fixColsWidth
                 } );
+            $(window).on('resize', function () {
+                datatable.fnAdjustColumnSizing();
+            } );
 
 
             var $dataTablesFilter = $(".dataTables_filter");
@@ -153,6 +167,7 @@ jQuery.fn.dataTableExt.oSort['title-numeric-asc']  = function(a,b) {
     y = parseFloat(y[1]);
     return ((x < y) ? -1 : ((x > y) ?  1 : 0));
 };
+
 jQuery.fn.dataTableExt.oSort['title-numeric-desc'] = function(a,b) {
     var x = a.match(/title="*(-?[0-9]+)/);
     var y = b.match(/title="*(-?[0-9]+)/);
@@ -163,5 +178,21 @@ jQuery.fn.dataTableExt.oSort['title-numeric-desc'] = function(a,b) {
 
     x = parseFloat(x[1]);
     y = parseFloat(y[1]);
+    return ((x < y) ?  1 : ((x > y) ? -1 : 0));
+};
+
+jQuery.fn.dataTableExt.oSort['title-date-asc']  = function(a,b) {
+    var x = a.match(/title="*(.+)"/);
+    var y = b.match(/title="*(.+)"/);
+    x = new Date(x[1]);
+    y = new Date(y[1]);
+    return ((x < y) ? -1 : ((x > y) ?  1 : 0));
+};
+
+jQuery.fn.dataTableExt.oSort['title-date-desc']  = function(a,b) {
+    var x = a.match(/title="*(.+)"/);
+    var y = b.match(/title="*(.+)"/);
+    x = new Date(x[1]);
+    y = new Date(y[1]);
     return ((x < y) ?  1 : ((x > y) ? -1 : 0));
 };

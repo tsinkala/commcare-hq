@@ -1,6 +1,9 @@
 from corehq.apps.importer.util import get_case_properties
+from soil import DownloadBase
 
-def export_cases_and_referrals(domain, cases, workbook, users=None, groups=None):
+
+def export_cases_and_referrals(domain, cases, workbook, users=None, groups=None,
+                               process=None):
     by_user_id = dict([(user.user_id, user) for user in users]) if users else None
     by_group_id = dict([(g.get_id, g) for g in groups]) if groups else {}
     case_static_keys = (
@@ -27,7 +30,7 @@ def export_cases_and_referrals(domain, cases, workbook, users=None, groups=None)
         "followup_on",
         "closed",
     )
-    case_dynamic_keys = sorted(get_case_properties(domain))
+    case_dynamic_keys = get_case_properties(domain)
     case_rows = []
     referral_rows = []
 
@@ -38,7 +41,10 @@ def export_cases_and_referrals(domain, cases, workbook, users=None, groups=None)
         else:
             return attr
 
-    for case in cases:
+    num_cases = len(cases)
+    for i, case in enumerate(cases):
+        if process:
+            DownloadBase.set_progress(process, i, num_cases)
         if not users or users and case.user_id in by_user_id:
             case_row = {'dynamic_properties': {}}
             for key in case_static_keys:

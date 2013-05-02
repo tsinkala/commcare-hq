@@ -9,12 +9,11 @@ from corehq.apps.reports import util
 from corehq.apps.groups.models import Group
 from corehq.apps.reports.filters.base import BaseReportFilter
 from corehq.apps.reports.models import HQUserType
-from corehq.apps.locations.models import Location
 from dimagi.utils.couch.database import get_db
 from dimagi.utils.dates import DateSpan
 from dimagi.utils.decorators.datespan import datespan_in_request
-from corehq.apps.locations.models import location_tree, root_locations
-import settings
+from corehq.apps.locations.util import load_locs_json, location_hierarchy_config
+from django.conf import settings
 import json
 from django.utils.translation import ugettext_noop
 from django.utils.translation import ugettext as _
@@ -369,7 +368,7 @@ class SelectFilteredMobileWorkerField(SelectMobileWorkerField):
 
     # Whether to display both the default option and "Only <group> Mobile
     # Workers" or just the default option (useful when using a single
-    # group_name and changing default_option to All <group> Workers
+    # group_name and changing default_option to All <group> Workers)
     show_only_group_option = True
 
     group_names = []
@@ -413,34 +412,6 @@ class DatespanField(ReportField):
         self.context['timezone'] = self.timezone.zone
         self.context['datespan'] = self.datespan
 
-class LocationField(ReportField):
-    name = ugettext_noop("Location")
-    slug = "location"
-    template = "reports/fields/location.html"
-    is_cacheable = True
-
-    def update_context(self):
-        self.context.update(self._get_custom_context())
-
-    @request_cache('locationfieldcontext')
-    def _get_custom_context(self):
-        all_locs = location_tree(self.domain)
-        def loc_to_json(loc):
-            return {
-                'name': loc.name,
-                'type': loc.location_type,
-                'uuid': loc._id,
-                'children': [loc_to_json(child) for child in loc._children],
-            }
-        loc_json = [loc_to_json(root) for root in all_locs]
-
-        return {
-            'control_name': self.name,
-            'control_slug': self.slug,
-            'loc_id': self.request.GET.get('location_id'),
-            'locations': json.dumps(loc_json)
-        }
-
 class AsyncLocationField(ReportField):
     name = ugettext_noop("Location")
     slug = "location_async"
@@ -450,37 +421,18 @@ class AsyncLocationField(ReportField):
         self.context.update(self._get_custom_context())
 
     def _get_custom_context(self):
-        def loc_to_json(loc):
-            return {
-                'name': loc.name,
-                'location_type': loc.location_type,
-                'uuid': loc._id,
-            }
-        loc_json = [loc_to_json(loc) for loc in root_locations(self.domain)]
         api_root = reverse('api_dispatch_list', kwargs={'domain': self.domain,
                                                         'resource_name': 'location', 
                                                         'api_name': 'v0.3'})
-
-        # if a location is selected, we need to pre-populate its location hierarchy
-        # so that the data is available client-side to pre-populate the drop-downs
         selected_loc_id = self.request.GET.get('location_id')
-        if selected_loc_id:
-            selected = Location.get(selected_loc_id)
-            lineage = list(Location.view('_all_docs', keys=selected.path, include_docs=True))
-
-            parent = {'children': loc_json}
-            for loc in lineage:
-                # find existing entry in the json tree that corresponds to this loc
-                this_loc = [k for k in parent['children'] if k['uuid'] == loc._id][0]
-                this_loc['children'] = [loc_to_json(loc) for loc in loc.children]
-                parent = this_loc
 
         return {
             'api_root': api_root,
             'control_name': self.name,
             'control_slug': self.slug,
             'loc_id': selected_loc_id,
-            'locations': json.dumps(loc_json)
+            'locations': json.dumps(load_locs_json(self.domain, selected_loc_id)),
+            'hierarchy': location_hierarchy_config(self.domain),
         }
 
 class AsyncDrillableField(BaseReportFilter):
@@ -498,7 +450,7 @@ class AsyncDrillableField(BaseReportFilter):
         return {
             'fixture_type': fdi.data_type_id,
             'fields': fdi.fields,
-            'uuid': fdi.get_id,
+            'id': fdi.get_id,
             'children': getattr(fdi, '_children', None),
         }
 
@@ -523,42 +475,47 @@ class AsyncDrillableField(BaseReportFilter):
             ret.append(new_h)
         return ret
 
+    def generate_lineage(self, leaf_type, leaf_item_id):
+        leaf_fdi = FixtureDataItem.get(leaf_item_id)
+
+        for i, h in enumerate(self.hierarchy[::-1]):
+            if h["type"] == leaf_type:
+                index = i
+
+        lineage = [leaf_fdi]
+        for i, h in enumerate(self.full_hierarchy[::-1]):
+            if i < index or i >= len(self.hierarchy)-1: continue
+            real_index = len(self.hierarchy) - (i+1)
+            lineage.insert(0, FixtureDataItem.by_field_value(self.domain, self.data_types(real_index - 1),
+                h["references"], lineage[0].fields[h["parent_ref"]]).one())
+
+        return lineage
+
     @property
     def filter_context(self):
+        root_fdis = [self.fdi_to_json(f) for f in FixtureDataItem.by_data_type(self.domain, self.data_types(0).get_id)]
+
         f_id = self.request.GET.get('fixture_id', None)
         selected_fdi_type = f_id.split(':')[0] if f_id else None
         selected_fdi_id = f_id.split(':')[1] if f_id else None
 
-        index = 0
         if selected_fdi_id:
-            for i, h in enumerate(self.hierarchy[::-1]):
-                if h['type'] == selected_fdi_type:
-                    index = i
-
-            cur_fdi = FixtureDataItem.get(selected_fdi_id)
-            siblings = list(FixtureDataItem.by_data_type(self.domain, cur_fdi.data_type_id))
-            for i, h in enumerate(self.full_hierarchy[::-1]):
-                if i < index: continue
-                if h.get('parent_ref', None):
-                    ngdt_id = self.full_hierarchy[len(self.full_hierarchy) - (i+2)]['id']
-                    next_gen = list(FixtureDataItem.by_data_type(self.domain, ngdt_id))
-                else:
-                    next_gen = []
-
-                if next_gen:
-                    parent = [f for f in next_gen if f.fields['id'] == cur_fdi.fields[h['parent_ref']]][0]
-                    parent._children = [self.fdi_to_json(fdi) for fdi in siblings]
-                    cur_fdi, siblings = parent, next_gen
-
-        else:
-            siblings = list(FixtureDataItem.by_data_type(self.domain, self.data_types(0).get_id))
+            index = 0
+            lineage = self.generate_lineage(selected_fdi_type, selected_fdi_id)
+            parent = {'children': root_fdis}
+            for i, fdi in enumerate(lineage[:-1]):
+                this_fdi = [f for f in parent['children'] if f['id'] == fdi.get_id][0]
+                next_h = self.hierarchy[i+1]
+                this_fdi['children'] = [self.fdi_to_json(f) for f in FixtureDataItem.by_field_value(self.domain,
+                                        self.data_types(i+1), next_h["parent_ref"], fdi.fields[next_h["references"]])]
+                parent = this_fdi
 
         return {
             'api_root': self.api_root,
             'control_name': self.label,
             'control_slug': self.slug,
             'selected_fdi_id': selected_fdi_id,
-            'fdis': json.dumps([self.fdi_to_json(fdi) for fdi in siblings]),
+            'fdis': json.dumps(root_fdis),
             'hierarchy': self.full_hierarchy
         }
         
@@ -575,7 +532,9 @@ class DeviceLogTagField(ReportField):
         selected_tags = self.request.GET.getlist(self.slug)
         show_all = bool(not selected_tags)
         self.context['default_on'] = show_all
-        data = get_db().view('phonelog/device_log_tags', group=True)
+        data = get_db().view('phonelog/device_log_tags',
+                             group=True,
+                             stale=settings.COUCH_STALE_QUERY)
         tags = [dict(name=item['key'],
                     show=bool(show_all or item['key'] in selected_tags))
                     for item in data]
@@ -596,7 +555,9 @@ class DeviceLogFilterField(ReportField):
         data = get_db().view(self.view,
             startkey = [self.domain],
             endkey = [self.domain, {}],
-            group=True)
+            group=True,
+            stale=settings.COUCH_STALE_QUERY,
+        )
         filters = [dict(name=item['key'][-1],
                     show=bool(show_all or item['key'][-1] in selected))
                         for item in data]

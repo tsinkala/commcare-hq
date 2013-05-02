@@ -13,7 +13,7 @@ def get_case_properties(domain, case_type=None):
                          startkey=key,
                          endkey=key + [{}],
                          reduce=True, group=True, group_level=3).all()
-    return [r['key'][2] for r in rows]
+    return sorted(set([r['key'][2] for r in rows]))
     
 # class to deal with Excel files
 class ExcelFile(object):
@@ -46,7 +46,7 @@ class ExcelFile(object):
     def get_header_columns(self):
         sheet = self.get_first_sheet()
         
-        if sheet:
+        if sheet and sheet.ncols > 0:
             columns = []
             
             # get columns 

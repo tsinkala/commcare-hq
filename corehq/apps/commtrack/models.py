@@ -1,14 +1,20 @@
 from couchdbkit.ext.django.schema import *
+from corehq.apps.commtrack import const
 from dimagi.utils.couch.loosechange import map_reduce
 from couchforms.models import XFormInstance
 from dimagi.utils import parsing as dateparse
 from datetime import datetime
 from casexml.apps.case.models import CommCareCase
 from copy import copy
+from django.dispatch import receiver
+from corehq.apps.locations.signals import location_created
+from corehq.apps.commtrack.const import RequisitionActions, RequisitionStatus
 
 # these are the allowable stock transaction types, listed in the
 # default ordering in which they are processed. processing order
 # may be customized per domain
+from dimagi.utils.decorators.memoized import memoized
+
 ACTION_TYPES = [
     # indicates the product has been stocked out for N days
     # prior to the reporting date, including today ('0' does
@@ -26,6 +32,23 @@ ACTION_TYPES = [
 
     # immediately indicates that product is stocked out right now
     'stockout',
+]
+
+REQUISITION_ACTION_TYPES = [
+    # request a product
+    RequisitionActions.REQUEST,
+
+    # approve a requisition (it is allowed to be filled)
+    # using this is configurable and optional
+    RequisitionActions.APPROVAL,
+
+    # fill a requisition (the order is ready)
+    RequisitionActions.FILL,
+
+    # receive the sock (closes the requisition)
+    # NOTE: it's not totally clear if this is necessary or
+    # should be built into the regular receipt workflow.
+    RequisitionActions.RECEIPTS,
 ]
 
 class Product(Document):
@@ -66,6 +89,9 @@ class CommtrackActionConfig(DocumentSchema):
     name = StringProperty() # defaults to action_type
     caption = StringProperty()
 
+    def __repr__(self):
+        return '{action_type}: {caption} ({keyword})'.format(**self._doc)
+
     def _keyword(self, multi):
         if multi:
             k = self.multiaction_keyword or self.keyword
@@ -76,6 +102,30 @@ class CommtrackActionConfig(DocumentSchema):
     @property
     def action_name(self):
         return self.name or self.action_type
+
+    @property
+    def is_stock(self):
+        # NOTE: assumes ACTION_TYPES and REQUISITION_ACTION_TYPES don't overlap
+        return self.action_type in ACTION_TYPES
+
+    @property
+    def is_requisition(self):
+        return self.action_type in REQUISITION_ACTION_TYPES
+
+class LocationType(DocumentSchema):
+    name = StringProperty()
+    allowed_parents = StringListProperty()
+    administrative = BooleanProperty()
+
+class CommtrackRequisitionConfig(DocumentSchema):
+    # placeholder class for when this becomes fancier
+
+    enabled = BooleanProperty(default=False)
+
+    # requisitions have their own sets of actions
+    actions = SchemaListProperty(CommtrackActionConfig)
+    
+
 
 class SupplyPointType(DocumentSchema):
     name = StringProperty()
@@ -93,7 +143,14 @@ class CommtrackConfig(Document):
     multiaction_keyword = StringProperty() # if None, will attempt to parse
     # all messages as multi-action
 
+    location_types = SchemaListProperty(LocationType)
     supply_point_types = SchemaListProperty(SupplyPointType)
+
+    requisition_config = SchemaProperty(CommtrackRequisitionConfig)
+
+    consumption_rate_window = IntegerProperty() # days
+    consumption_rate_min_timespan = IntegerProperty() # days
+    consumption_rate_min_datapoints = IntegerProperty()
 
     @classmethod
     def for_domain(cls, domain):
@@ -102,12 +159,44 @@ class CommtrackConfig(Document):
                           include_docs=True).one()
         return result
 
+    def all_actions(self):
+        if self.requisitions_enabled:
+            return self.actions + self.requisition_config.actions
+        return self.actions
+
+    def _keywords(self, action_list, multi):
+        return dict((action_config._keyword(multi), action_config.action_name) \
+                    for action_config in action_list)
+
     def keywords(self, multi=False):
-        return dict((action_config._keyword(multi), action_config.action_name) for action_config in self.actions)
+        return self._keywords(self.actions, multi)
+
+    # TODO clean all this up
+    def stock_keywords(self):
+        return self.keywords()
+    def requisition_keywords(self):
+        return self._keywords(self.requisition_config.actions if self.requisitions_enabled else [], False)
+
+    def all_keywords(self, multi=False):
+        return self._keywords(self.all_actions(), multi)
+
+    def _by_name(self, action_list):
+        return dict((action_config.action_name, action_config) for action_config in action_list)
 
     @property
     def actions_by_name(self):
-        return dict((action_config.action_name, action_config) for action_config in self.actions)
+        return self._by_name(self.actions)
+
+    @property
+    def all_actions_by_name(self):
+        return self._by_name(self.all_actions())
+
+    @property
+    def all_actions_by_type(self):
+        return dict((action_config.action_type, action_config) for action_config in self.all_actions())
+
+    def get_action_by_type(self, action_type):
+        return self.all_actions_by_type[action_type]
 
     @property
     def known_supply_point_types(self):
@@ -116,6 +205,10 @@ class CommtrackConfig(Document):
     @property
     def supply_point_categories(self):
         return map_reduce(lambda spt: [(category, spt.name) for category in spt.categories], data=self.supply_point_types)
+
+    @property
+    def requisitions_enabled(self):
+        return self.requisition_config.enabled
 
 def _view_shared(view_name, domain, location_id=None, skip=0, limit=100):
     extras = {"limit": limit} if limit else {}
@@ -176,6 +269,7 @@ class StockTransaction(DocumentSchema):
     product_entry = StringProperty()
     received_on = DateTimeProperty()
     inferred = BooleanProperty(name='@inferred', default=False)
+    processing_order = IntegerProperty(name='@order')
 
     @classmethod
     def by_domain(cls, domain, skip=0, limit=100):
@@ -187,6 +281,114 @@ class StockTransaction(DocumentSchema):
         return [StockTransaction.wrap(row["value"]) for row in _view_shared(
             'commtrack/stock_transactions', domain, location_id,
             skip=skip, limit=limit)]
+
+    @classmethod
+    def by_product(cls, product_case, start_date, end_date):
+        q = CommCareCase.get_db().view('commtrack/stock_transactions_by_product',
+                                       startkey=[product_case, start_date],
+                                       endkey=[product_case, end_date, {}])
+        return [StockTransaction.wrap(row['value']) for row in q]
+
+
+
+def _get_single_index(case, identifier, type):
+    matching = filter(lambda i: i.identifier == identifier, case.indices)
+    if matching:
+        assert len(matching) == 1, 'should only be one parent index'
+        assert matching[0].referenced_type == type, \
+             ' parent had bad case type %s' % matching[0].referenced_type
+        return CommCareCase.get(matching[0].referenced_id)
+    return None
+
+class SupplyPointProductCase(CommCareCase):
+    """
+    A wrapper around CommCareCases to get more built in functionality
+    specific to supply point products.
+    """
+    # can flesh this out more as needed
+    product = StringProperty() # would be nice if this was product_id but is grandfathered in
+
+    @memoized
+    def get_product(self):
+        return Product.get(self.product)
+
+    @memoized
+    def get_supply_point_case(self):
+        return _get_single_index(self, const.PARENT_CASE_REF, const.SUPPLY_POINT_CASE_TYPE)
+
+    class Meta:
+        app_label = "commtrack" # This is necessary otherwise syncdb will confuse this app with casexml
+
+class RequisitionCase(CommCareCase):
+    """
+    A wrapper around CommCareCases to get more built in functionality
+    specific to requisitions.
+    """
+    # supply_point = StringProperty() # todo, if desired
+    requisition_status = StringProperty()
+
+    # NOTE: this is redundant with the supply point product case and is an optimization
+    product_id = StringProperty()
+
+    # this second field is added for auditing purposes
+    # the status can change, but once set - this one will not
+    requested_on = DateTimeProperty()
+    approved_on = DateTimeProperty()
+    filled_on = DateTimeProperty()
+    received_on = DateTimeProperty()
+
+    requested_by = StringProperty()
+    approved_by = StringProperty()
+    filled_by = StringProperty()
+    received_by = StringProperty()
+
+    # NOTE: should these be strings or ints or decimals?
+    amount_requested = StringProperty()
+    # these two fields are unnecessary with no ability to
+    # approve partial resupplies in the current system, but is
+    # left in the models for possible use down the road
+    amount_approved = StringProperty()
+    amount_filled = StringProperty()
+    amount_received = StringProperty()
+
+    @memoized
+    def get_supply_point_case(self):
+        product_case = self.get_product_case()
+        if product_case:
+            return product_case.get_supply_point_case()
+        return None
+
+    @memoized
+    def get_product_case(self):
+        uncasted = _get_single_index(self, const.PARENT_CASE_REF, const.SUPPLY_POINT_PRODUCT_CASE_TYPE)
+        return SupplyPointProductCase.wrap(uncasted._doc) if uncasted else None
+
+    def get_default_value(self):
+        """get how much the default is. this is dependent on state."""
+        property_map = {
+            RequisitionStatus.REQUESTED: 'amount_requested',
+            RequisitionStatus.APPROVED: 'amount_approved',
+            RequisitionStatus.FILLED: 'amount_filled',
+
+        }
+        return getattr(self, property_map.get(self.requisition_status, 'amount_requested'))
+
+    @classmethod
+    def open_for_location(cls, domain, location_id):
+        """
+        For a given location, return the IDs of all open requisitions at that location.
+        """
+        results = cls.get_db().view('commtrack/requisitions',
+            startkey=[domain, location_id, 'open'],
+            endkey=[domain, location_id, 'open', {}],
+            reduce=False,
+        )
+        return [r['id'] for r in results]
+
+
+    class Meta:
+        app_label = "commtrack" # This is necessary otherwise syncdb will confuse this app with casexml
+
 
 class StockReport(object):
     """
@@ -250,3 +452,20 @@ class StockReport(object):
                                    endkey=endkey,
                                    include_docs=True)]
 
+@receiver(location_created)
+def post_loc_created(sender, loc=None, **kwargs):
+    # circular imports
+    from corehq.apps.commtrack.helpers import make_supply_point
+    from corehq.apps.domain.models import Domain
+
+    domain = Domain.get_by_name(loc.domain)
+    if not domain.commtrack_enabled:
+        return
+    config = domain.commtrack_settings
+
+    # exclude administrative-only locs
+    if loc.location_type in [loc_type.name for loc_type in config.location_types if not loc_type.administrative]:
+        make_supply_point(loc.domain, loc)
+
+# import signals
+from . import signals

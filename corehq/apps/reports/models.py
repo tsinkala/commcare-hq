@@ -1,17 +1,21 @@
 from datetime import datetime, timedelta
+import logging
+from django.http import Http404
 from django.utils import html
 from django.utils.safestring import mark_safe
 import pytz
 from corehq.apps import reports
+from corehq.apps.app_manager.models import get_app
 from corehq.apps.reports.display import xmlns_to_name
 from couchdbkit.ext.django.schema import *
-from corehq.apps.users.models import WebUser, CommCareUser
+from corehq.apps.users.models import WebUser, CommCareUser, CouchUser
 from couchexport.models import SavedExportSchema, GroupExportConfiguration
 from couchexport.util import SerializableFunction
 import couchforms
 from dimagi.utils.couch.database import get_db
 from dimagi.utils.decorators.memoized import memoized
 from django.conf import settings
+from django.core.validators import validate_email
 from corehq.apps.reports.dispatcher import (ProjectReportDispatcher,
     CustomProjectReportDispatcher)
 from corehq.apps.adm.dispatcher import ADMSectionDispatcher
@@ -20,6 +24,7 @@ import calendar
 from django.utils.translation import ugettext as _
 from django.utils.translation import ugettext_noop
 from dimagi.utils.logging import notify_exception
+
 
 class HQUserType(object):
     REGISTERED = 0
@@ -43,6 +48,7 @@ class HQUserType(object):
     def use_filter(cls, ufilter):
         return [HQUserToggle(i, unicode(i) in ufilter) for i in range(len(cls.human_readable))]
 
+
 class HQToggle(object):
     type = None
     show = False
@@ -60,6 +66,7 @@ class HQToggle(object):
             name=self.name,
             show=self.show
         )
+
 
 class HQUserToggle(HQToggle):
     
@@ -115,8 +122,8 @@ class TempCommCareUser(CommCareUser):
         app_label = 'reports'
 
 
-
 DATE_RANGE_CHOICES = ['last7', 'last30', 'lastn', 'since', 'range']
+
 
 class ReportConfig(Document):
     _extra_json_properties = ['url', 'report_name', 'date_description']
@@ -154,17 +161,15 @@ class ReportConfig(Document):
         return super(ReportConfig, self).delete(*args, **kwargs)
 
     @classmethod
-    def by_domain_and_owner(cls, domain, owner_id, report_slug=None, include_docs=True):
+    def by_domain_and_owner(cls, domain, owner_id, report_slug=None, **kwargs):
         if report_slug is not None:
             key = ["name slug", domain, owner_id, report_slug]
         else:
             key = ["name", domain, owner_id]
 
         return cls.view('reportconfig/configs_by_domain',
-            reduce=False,
-            include_docs=include_docs,
-            startkey=key,
-            endkey=key + [{}])
+            reduce=False, include_docs=True, startkey=key, endkey=key + [{}],
+            stale=settings.COUCH_STALE_QUERY, **kwargs)
    
     @classmethod
     def default(self):
@@ -263,10 +268,13 @@ class ReportConfig(Document):
     @property
     @memoized
     def url(self):
-        from django.core.urlresolvers import reverse
-        
-        return reverse(self._dispatcher.name(), kwargs=self.view_kwargs) \
-                + '?' + self.query_string
+        try:
+            from django.core.urlresolvers import reverse
+            
+            return reverse(self._dispatcher.name(), kwargs=self.view_kwargs) \
+                    + '?' + self.query_string
+        except Exception:
+            return "#"
 
     @property
     @memoized
@@ -281,10 +289,13 @@ class ReportConfig(Document):
 
     @property
     def report_name(self):
-        if self.report is None:
-            return _("Deleted Report")
-        else:
-            return _(self.report.name)
+        try:
+            if self.report is None:
+                return _("Deleted Report")
+            else:
+                return _(self.report.name)
+        except Exception:
+            return _("Unsupported Report")
 
     @property
     def full_name(self):
@@ -308,18 +319,24 @@ class ReportConfig(Document):
     @property
     @memoized
     def owner(self):
-        return WebUser.get(self.owner_id)
+        try:
+            return WebUser.get_by_user_id(self.owner_id)
+        except CouchUser.AccountTypeError:
+            return CommCareUser.get_by_user_id(self.owner_id)
 
     def get_report_content(self):
         """
         Get the report's HTML content as rendered by the static view format.
 
         """
-        if self.report is None:
-            return _("The report used to create this scheduled report is no"
-                     " longer available on CommCare HQ.  Please delete this"
-                     " scheduled report and create a new one using an available"
-                     " report.")
+        try:
+            if self.report is None:
+                return _("The report used to create this scheduled report is no"
+                         " longer available on CommCare HQ.  Please delete this"
+                         " scheduled report and create a new one using an available"
+                         " report.")
+        except Exception:
+            pass
 
         from django.http import HttpRequest, QueryDict
         request = HttpRequest()
@@ -330,9 +347,13 @@ class ReportConfig(Document):
 
         request.GET = QueryDict(self.query_string + '&filterSet=true')
 
-        response = self._dispatcher.dispatch(request, render_as='email',
-                                             **self.view_kwargs)
-        return json.loads(response.content)['report']
+        try:
+            response = self._dispatcher.dispatch(request, render_as='email',
+                **self.view_kwargs)
+            return json.loads(response.content)['report']
+        except Exception:
+            notify_exception(None, "Error generating report")
+            return _("An error occurred while generating this report.")
 
 
 class UnsupportedScheduledReportError(Exception):
@@ -368,14 +389,12 @@ class ReportNotification(Document):
             return True
         
     @classmethod
-    def by_domain_and_owner(cls, domain, owner_id):
+    def by_domain_and_owner(cls, domain, owner_id, **kwargs):
         key = [domain, owner_id]
 
         return cls.view("reportconfig/user_notifications",
-            reduce=False,
-            startkey=key,
-            endkey=key + [{}],
-            include_docs=True)
+            reduce=False, include_docs=True, startkey=key, endkey=key + [{}],
+            stale=settings.COUCH_STALE_QUERY, **kwargs)
 
     @property
     def all_recipient_emails(self):
@@ -385,7 +404,15 @@ class ReportNotification(Document):
 
         emails = []
         if self.send_to_owner:
-            emails.append(self.owner.username)
+            if self.owner.is_web_user():
+                emails.append(self.owner.username)
+            else:
+                email = self.owner.get_email()
+                try:
+                    validate_email(email)
+                    emails.append(email)
+                except Exception:
+                    pass
         emails.extend(self.recipient_emails)
         return emails
 
@@ -393,7 +420,10 @@ class ReportNotification(Document):
     @memoized
     def owner(self):
         id = self.owner_id if self.owner_id else self.user_ids[0]
-        return WebUser.get(id)
+        try:
+            return WebUser.get_by_user_id(id)
+        except CouchUser.AccountTypeError:
+            return CommCareUser.get_by_user_id(id)
 
     @property
     @memoized
@@ -460,10 +490,31 @@ class ReportNotification(Document):
         for email in self.all_recipient_emails:
             send_HTML_email(title, email, body)
 
+
+class AppNotFound(Exception):
+    pass
+
+
 class FormExportSchema(SavedExportSchema):
     doc_type = 'SavedExportSchema'
     app_id = StringProperty()
     include_errors = BooleanProperty(default=True)
+
+    @property
+    @memoized
+    def app(self):
+        if self.app_id:
+            try:
+                return get_app(self.domain, self.app_id, latest=True)
+            except Http404:
+                logging.error('App %s in domain %s not found for export %s' % (
+                    self.app_id,
+                    self.domain,
+                    self.get_id
+                ))
+                raise AppNotFound()
+        else:
+            return None
 
     @classmethod
     def wrap(cls, data):
@@ -496,6 +547,23 @@ class FormExportSchema(SavedExportSchema):
     def formname(self):
         return xmlns_to_name(self.domain, self.xmlns, app_id=self.app_id)
 
+    def get_default_order(self):
+        if not self.app:
+            return []
+        else:
+            questions = self.app.get_questions(self.xmlns)
+
+        order = []
+        for question in questions:
+            index_parts = question['value'].split('/')
+            assert index_parts[0] == ''
+            index_parts[1] = 'form'
+            index = '.'.join(index_parts[1:])
+            order.append(index)
+
+        return {'#': order}
+
+
 class FormDeidExportSchema(FormExportSchema):
 
     @property
@@ -505,7 +573,8 @@ class FormDeidExportSchema(FormExportSchema):
     @classmethod
     def get_case(cls, doc, case_id):
         pass
-    
+
+
 class HQGroupExportConfiguration(GroupExportConfiguration):
     """
     HQ's version of a group export, tagged with a domain
@@ -548,6 +617,7 @@ class HQGroupExportConfiguration(GroupExportConfiguration):
         if updated:
             group.save()
         return group
+
 
 class CaseActivityReportCache(Document):
     domain = StringProperty()

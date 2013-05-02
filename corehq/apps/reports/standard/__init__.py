@@ -2,7 +2,6 @@ import dateutil
 from django.core.urlresolvers import reverse
 from corehq.apps.groups.models import Group
 from corehq.apps.reports import util
-from corehq.apps.adm import utils as adm_utils
 from corehq.apps.reports.dispatcher import ProjectReportDispatcher, CustomProjectReportDispatcher
 from corehq.apps.reports.fields import FilterUsersField
 from corehq.apps.reports.generic import GenericReportView
@@ -16,17 +15,13 @@ DATE_FORMAT = "%Y-%m-%d"
 class ProjectReport(GenericReportView):
     # overriding properties from GenericReportView
     section_name = ugettext_noop("Project Reports")
-    app_slug = 'reports'
+    base_template = 'reports/base_template.html'
     dispatcher = ProjectReportDispatcher
     asynchronous = True
 
     @property
     def default_report_url(self):
         return reverse('reports_home', args=[self.request.project])
-
-    @property
-    def show_subsection_navigation(self):
-        return adm_utils.show_adm_nav(self.domain, self.request)
 
     def set_announcements(self):
         if self.request.couch_user:
@@ -57,6 +52,9 @@ class ProjectReportParametersMixin(object):
         All the parameters necessary for the project reports.
         Intended to be mixed in with a GenericReportView object.
     """
+
+    default_case_type = None
+    filter_group_name = None
 
     @property
     @memoized
@@ -102,8 +100,13 @@ class ProjectReportParametersMixin(object):
     @property
     @memoized
     def users(self):
+        if self.filter_group_name and not (self.group_id or self.individual):
+            group = Group.by_name(self.domain, self.filter_group_name)
+        else:
+            group = self.group
+
         return self.get_all_users_by_domain(
-            group=self.group,
+            group=group,
             individual=self.individual,
             user_filter=tuple(self.user_filter),
             simplified=True
@@ -131,7 +134,7 @@ class ProjectReportParametersMixin(object):
 
     @property
     def case_type(self):
-        return self.request_params.get('case_type', '')
+        return self.default_case_type or self.request_params.get('case_type', '')
 
     @property
     def case_status(self):

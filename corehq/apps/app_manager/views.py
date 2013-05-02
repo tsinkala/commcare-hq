@@ -1,49 +1,51 @@
 from StringIO import StringIO
+import functools
 import logging
-import uuid
-import zipfile
 from diff_match_patch import diff_match_patch
+from django.core.cache import cache
 from django.template.loader import render_to_string
 import hashlib
+from django.utils.translation import ugettext as _
 from corehq.apps.app_manager.const import APP_V1
 from corehq.apps.app_manager.success_message import SuccessMessage
 from corehq.apps.domain.models import Domain
+from corehq.apps.domain.views import DomainViewMixin
 from couchexport.export import FormattedRow
 from couchexport.models import Format
 from couchexport.writers import Excel2007ExportWriter
 from dimagi.utils.couch.database import get_db
 from dimagi.utils.couch.resource_conflict import retry_resource
-from django.utils import simplejson
+from django.utils import html
 from django.utils.http import urlencode as django_urlencode
 import os
 import re
 
 from couchdbkit.exceptions import ResourceConflict
-from django.http import HttpResponse, Http404, HttpResponseBadRequest, HttpResponseForbidden, HttpResponseServerError
+from django.http import HttpResponse, Http404, HttpResponseBadRequest, HttpResponseForbidden
 from unidecode import unidecode
-from corehq.apps.hqmedia import utils
 from corehq.apps.app_manager.xform import XFormError, XFormValidationError, CaseError,\
     XForm, parse_xml
 from corehq.apps.builds.models import CommCareBuildConfig, BuildSpec
-from corehq.apps.hqmedia import upload
-from corehq.apps.sms.views import get_sms_autocomplete_context
 from corehq.apps.users.decorators import require_permission
 from corehq.apps.users.models import Permissions, CommCareUser
+from dimagi.utils.decorators.memoized import memoized
+from dimagi.utils.django.cache import make_template_fragment_key
 from dimagi.utils.logging import notify_exception
 from dimagi.utils.subprocess_timeout import ProcessTimedOut
 
-from dimagi.utils.web import render_to_response, json_response, json_request
+from dimagi.utils.web import json_response, json_request
 
 from corehq.apps.app_manager.forms import NewXFormForm, NewModuleForm
-from corehq.apps.hqmedia.forms import HQMediaZipUploadForm, HQMediaFileUploadForm
 from corehq.apps.reports import util as report_utils
 
 from corehq.apps.domain.decorators import login_and_domain_required, login_or_digest
 
 from django.http import HttpResponseRedirect
 from django.core.urlresolvers import reverse, RegexURLResolver
+from django.shortcuts import render
+
 from corehq.apps.app_manager.models import Application, get_app, DetailColumn, Form, FormActions,\
-    AppError, load_case_reserved_words, ApplicationBase, DeleteFormRecord, DeleteModuleRecord, DeleteApplicationRecord, EXAMPLE_DOMAIN, str_to_cls, validate_lang, SavedAppBuild
+    AppError, load_case_reserved_words, ApplicationBase, DeleteFormRecord, DeleteModuleRecord, DeleteApplicationRecord, EXAMPLE_DOMAIN, str_to_cls, validate_lang, SavedAppBuild, load_commcare_settings_layout
 
 from corehq.apps.app_manager.models import DETAIL_TYPES, import_app as import_app_util
 from django.utils.http import urlencode
@@ -53,13 +55,10 @@ from django.conf import settings
 from dimagi.utils.web import get_url_base
 
 import json
-import urllib
-import urlparse
 from collections import defaultdict
 from couchdbkit.resource import ResourceNotFound
 from corehq.apps.app_manager.decorators import safe_download
 from xml.dom.minidom import parseString
-from corehq.apps.hqmedia.models import CommCareMultimedia
 
 try:
     from lxml.etree import XMLSyntaxError
@@ -74,6 +73,29 @@ def set_file_download(response, filename):
 
 def _encode_if_unicode(s):
     return s.encode('utf-8') if isinstance(s, unicode) else s
+
+
+class ApplicationViewMixin(DomainViewMixin):
+    """
+        Paving the way for class-based views in app manager. Yo yo yo.
+    """
+
+    @property
+    @memoized
+    def app_id(self):
+        return self.args[1] if len(self.args) > 1 else self.kwargs.get('app_id')
+
+    @property
+    @memoized
+    def app(self):
+        try:
+            # if get_app is mainly used for views, maybe it should be a classmethod of this mixin? todo
+            return get_app(self.domain, self.app_id)
+        except Exception:
+            pass
+        return None
+
+
 @login_and_domain_required
 def back_to_main(req, domain, app_id=None, module_id=None, form_id=None, unique_form_id=None, edit=True, error='', page=None, **kwargs):
     """
@@ -162,8 +184,12 @@ def get_user_registration_source(req, domain, app_id):
     return _get_xform_source(req, app, form, filename="User Registration.xml")
 
 def xform_display(req, domain, form_unique_id):
-    form, app = Form.get_form(form_unique_id, and_app=True)
-    if domain != app.domain: raise Http404
+    try:
+        form, app = Form.get_form(form_unique_id, and_app=True)
+    except ResourceNotFound:
+        raise Http404()
+    if domain != app.domain:
+        raise Http404()
     langs = [req.GET.get('lang')] + app.langs
 
     questions = form.get_questions(langs)
@@ -172,8 +198,12 @@ def xform_display(req, domain, form_unique_id):
 
 @login_and_domain_required
 def form_casexml(req, domain, form_unique_id):
-    form, app = Form.get_form(form_unique_id, and_app=True)
-    if domain != app.domain: raise Http404
+    try:
+        form, app = Form.get_form(form_unique_id, and_app=True)
+    except ResourceNotFound:
+        raise Http404()
+    if domain != app.domain:
+        raise Http404()
     return HttpResponse(form.create_casexml())
 
 @login_or_digest
@@ -184,6 +214,7 @@ def app_source(req, domain, app_id):
 @login_and_domain_required
 def import_app(req, domain, template="app_manager/import_app.html"):
     if req.method == "POST":
+        _clear_app_cache(req, domain)
         name = req.POST.get('name')
         try:
             source = req.POST.get('source')
@@ -201,7 +232,7 @@ def import_app(req, domain, template="app_manager/import_app.html"):
         return back_to_main(**locals())
     else:
         app_id = req.GET.get('app')
-        redirect_domain = req.GET.get('domain')
+        redirect_domain = req.GET.get('domain') or None
         if redirect_domain is not None:
             if Domain.get_by_name(redirect_domain):
                 return HttpResponseRedirect(
@@ -222,7 +253,11 @@ def import_app(req, domain, template="app_manager/import_app.html"):
         else:
             app = None
 
-        return render_to_response(req, template, {'domain': domain, 'app': app})
+        return render(req, template, {
+            'domain': domain, 
+            'app': app,
+            'is_superuser': req.couch_user.is_superuser
+        })
 
 @require_can_edit_apps
 @require_POST
@@ -274,16 +309,19 @@ def default(req, domain):
     """
     return view_app(req, domain)
 
+
 def get_form_view_context(request, form, langs, is_user_registration, messages=messages):
     xform_questions = []
     xform = None
+    form_errors = []
+
     try:
         xform = form.wrapped_xform()
     except XFormError as e:
-        messages.error(request, "Error in form: %s" % e)
+        form_errors.append("Error in form: %s" % e)
     except Exception as e:
         logging.exception(e)
-        messages.error(request, "Unexpected error in form: %s" % e)
+        form_errors.append("Unexpected error in form: %s" % e)
 
     if xform and xform.exists():
         if xform.already_has_meta():
@@ -291,32 +329,46 @@ def get_form_view_context(request, form, langs, is_user_registration, messages=m
                 "This form has a meta block already! "
                 "It may be replaced by CommCare HQ's standard meta block."
             )
+
         try:
             form.validate_form()
             xform_questions = xform.get_questions(langs)
         except XMLSyntaxError as e:
-            messages.error(request, "Syntax Error: %s" % e)
+            form_errors.append("Syntax Error: %s" % e)
         except AppError as e:
-            messages.error(request, "Error in application: %s" % e)
+            form_errors.append("Error in application: %s" % e)
         except XFormValidationError as e:
-            message = unicode(e)
+
             # Don't display the first two lines which say "Parsing form..." and 'Title: "{form_name}"'
-            messages.error(request, "Validation Error:\n")
-            for msg in message.split("\n")[2:]:
-                messages.error(request, "%s" % msg)
+            #
+            # ... and if possible split the third line that looks like e.g. "org.javarosa.xform.parse.XFormParseException: Select question has no choices"
+            # and just return the undecorated string
+            #
+            # ... unless the first line says
+            message_lines = unicode(e).split('\n')[2:]
+            if len(message_lines) > 0 and ':' in message_lines[0] and 'XPath Dependency Cycle' not in unicode(e):
+                message = ' '.join(message_lines[0].split(':')[1:])
+            else:
+                message = '\n'.join(message_lines)
+                
+            message = "Validation Error: " + message
+            form_errors.append((html.escape(message).replace('\n', '<br/>'), {'extra_tags': 'html'}))
+
         except XFormError as e:
-            messages.error(request, "Error in form: %s" % e)
+            form_errors.append("Error in form: %s" % e)
         # any other kind of error should fail hard, but for now there are too many for that to be practical
         except Exception as e:
             if settings.DEBUG:
                 raise
             logging.exception(e)
-            messages.error(request, "Unexpected System Error: %s" % e)
+            form_errors.append("Unexpected System Error: %s" % e)
 
         try:
-            xform.add_case_and_meta(form)
-            if settings.DEBUG and False:
-                xform.validate()
+            form_action_errors = form.validate_for_build()
+            if not form_action_errors:
+                xform.add_case_and_meta(form)
+                if settings.DEBUG and False:
+                    xform.validate()
         except CaseError as e:
             messages.error(request, "Error in Case Management: %s" % e)
         except XFormValidationError as e:
@@ -332,6 +384,13 @@ def get_form_view_context(request, form, langs, is_user_registration, messages=m
     except Exception:
         languages = []
 
+    for i, err in enumerate(form_errors):
+        if not isinstance(err, basestring):
+            messages.error(request, err[0], **err[1])
+            form_errors[i] = err[0]
+        else:
+            messages.error(request, err)
+
     return {
         'nav_form': form if not is_user_registration else '',
         'xform_languages': languages,
@@ -339,8 +398,85 @@ def get_form_view_context(request, form, langs, is_user_registration, messages=m
         'form_actions': form.actions.to_json(),
         'case_reserved_words_json': load_case_reserved_words(),
         'is_user_registration': is_user_registration,
-        'module_case_types': [{'module_name': module.name.get('en'), 'case_type': module.case_type} for module in form.get_app().modules if module.case_type] if not is_user_registration else None
+        'module_case_types': [{'module_name': module.name.get('en'), 'case_type': module.case_type} for module in form.get_app().modules if module.case_type] if not is_user_registration else None,
+        'form_errors': form_errors,
     }
+
+
+def get_app_view_context(request, app):
+    try:
+        profile = app.profile
+    except AttributeError:
+        profile = {}
+    hq_settings = dict([
+        (attr, app[attr])
+        for attr in app.properties() if not hasattr(app[attr], 'pop')
+    ])
+    if hasattr(app, 'custom_suite'):
+        hq_settings.update({'custom_suite': app.custom_suite})
+    context = {
+        'settings_layout': load_commcare_settings_layout(app.get_doc_type()),
+        'settings_values': {
+            'properties': profile.get('properties', {}),
+            'features': profile.get('features', {}),
+            'hq': hq_settings,
+            '$parent': {
+                'doc_type': app.get_doc_type()
+            }
+        }
+    }
+    context['settings_values']['hq']['build_spec'] = app.build_spec.to_string()
+
+
+    commcare_build_options = {}
+    build_config = CommCareBuildConfig.fetch()
+    for version in [app.application_version]:
+        options = build_config.get_menu(version)
+        options_labels = list()
+        options_builds = list()
+        for option in options:
+            options_labels.append(option.get_label())
+            options_builds.append(option.build.to_string())
+            commcare_build_options[version] = {"options" : options, "labels" : options_labels, "builds" : options_builds}
+
+    (build_spec_setting,) = filter(
+        lambda x: x['type'] == 'hq' and x['id'] == 'build_spec',
+        [setting for section in context['settings_layout']
+            for setting in section['settings']]
+    )
+    build_spec_setting['values'] = options_builds
+    build_spec_setting['value_names'] = options_labels
+    build_spec_setting['default'] = build_config.get_default(app.application_version).to_string()
+
+    app_build_spec_string = app.build_spec.to_string()
+    app_build_spec_label = app.build_spec.get_label()
+
+    context.update({
+        "commcare_build_options" : commcare_build_options,
+        "app_build_spec_string" : app_build_spec_string,  # todo: remove
+        "app_build_spec_label" : app_build_spec_label,  # todo: remove
+        "app_version" : app.application_version,  # todo: remove
+    })
+
+    if app.get_doc_type() == 'Application':
+        try:
+            # todo remove get_media_references
+            multimedia = app.get_media_references()
+        except ProcessTimedOut as e:
+            notify_exception(request)
+            messages.warning(request, (
+                "We were unable to check if your forms had errors. "
+                "Refresh the page and we will try again."
+            ))
+            multimedia = {
+                'references': {},
+                'form_errors': True,
+                'missing_refs': False,
+            }
+        context.update({
+            'multimedia': multimedia,
+        })
+    return context
 
 def get_langs(request, app):
     lang = request.GET.get('lang',
@@ -358,11 +494,30 @@ def get_langs(request, app):
         langs = [lang] + app.langs
     return lang, langs
 
+
+def _clear_app_cache(request, domain):
+    from corehq import ApplicationsTab
+    ApplicationBase.get_db().view('app_manager/applications_brief',
+        startkey=[domain],
+        limit=1,
+    ).all()
+    for is_active in True, False:
+        key = make_template_fragment_key('header_tab', [
+            domain,
+            ApplicationsTab.view,
+            is_active,
+            request.couch_user.get_id
+        ])
+        cache.delete(key)
+
+
 def get_apps_base_context(request, domain, app):
 
-    applications = []
-    for _app in ApplicationBase.view('app_manager/applications_brief', startkey=[domain], endkey=[domain, {}]):
-        applications.append(_app)
+    applications = ApplicationBase.view('app_manager/applications_brief',
+        startkey=[domain],
+        endkey=[domain, {}],
+        stale=settings.COUCH_STALE_QUERY,
+    ).all()
 
     lang, langs = get_langs(request, app)
 
@@ -375,38 +530,22 @@ def get_apps_base_context(request, domain, app):
         timezone = None
 
     if app:
-        latest_app_version = ApplicationBase.view('app_manager/saved_app',
-            startkey=[domain, app.id, {}],
-            endkey=[domain, app.id],
-            descending=True,
-            limit=1,
-        ).one()
-        latest_app_version = latest_app_version.version if latest_app_version else -1
         for _lang in app.langs:
             try:
                 SuccessMessage(app.success_message.get(_lang, ''), '').check_message()
             except Exception as e:
                 messages.error(request, "Your success message is malformed: %s is not a keyword" % e)
-    else:
-        latest_app_version = -1
-    context = {
+
+    return {
         'lang': lang,
         'langs': langs,
         'domain': domain,
         'edit': edit,
         'applications': applications,
-        'latest_app_version': latest_app_version,
-        'app': app
-    }
-    context.update(get_sms_autocomplete_context(request, domain))
-    context.update({
+        'app': app,
         'URL_BASE': get_url_base(),
-        'edit': edit,
-        'latest_app_version': latest_app_version,
         'timezone': timezone,
-    })
-
-    return context
+    }
 
 @login_and_domain_required
 def paginate_releases(request, domain, app_id):
@@ -442,17 +581,13 @@ def release_manager(request, domain, app_id, template='app_manager/releases.html
         'users_cannot_share': users_cannot_share,
     })
     if not app.is_remote_app():
-        sorted_images, sorted_audio, has_error = utils.get_sorted_multimedia_refs(app)
-        multimedia_images, missing_image_refs = app.get_template_map(sorted_images)
-        multimedia_audio, missing_audio_refs = app.get_template_map(sorted_audio)
-        if len(multimedia_images) > 0 or len(multimedia_audio) > 0 or has_error:
-            context.update(dict(multimedia={
-                'missing_image_refs': missing_image_refs,
-                'missing_audio_refs': missing_audio_refs,
-                'errors': has_error,
-                'notice': bool(has_error or missing_image_refs > 0  or missing_audio_refs > 0)
-            }))
-    response = render_to_response(request, template, context)
+        # Multimedia is not supported for remote applications at this time.
+        # todo remove get_media_references
+        multimedia = app.get_media_references()
+        context.update({
+            'multimedia': multimedia,
+        })
+    response = render(request, template, context)
     response.set_cookie('lang', _encode_if_unicode(context['lang']))
     return response
 
@@ -485,7 +620,14 @@ def view_generic(req, domain, app_id=None, module_id=None, form_id=None, is_user
         if app_id:
             app = get_app(domain, app_id)
         if is_user_registration:
-            form = app.get_user_registration()
+            if not app.user_registration.unique_id:
+                # you have to do it this way because get_user_registration
+                # changes app.user_registration.unique_id
+                form = app.get_user_registration()
+                app.save()
+            else:
+                form = app.get_user_registration()
+
         if module_id:
             module = app.get_module(module_id)
         if form_id:
@@ -504,7 +646,6 @@ def view_generic(req, domain, app_id=None, module_id=None, form_id=None, is_user
         # don't fail hard.
         return HttpResponseRedirect(reverse("corehq.apps.app_manager.views.view_app", args=[domain,app.copy_of]))
 
-
     # grandfather in people who set commcare sense earlier
     if app and 'use_commcare_sense' in app:
         if app['use_commcare_sense']:
@@ -516,9 +657,42 @@ def view_generic(req, domain, app_id=None, module_id=None, form_id=None, is_user
 
     case_properties = set()
     if module:
-        for _form in module.forms:
-            case_properties.update(_form.actions.update_case.update.keys())
-    case_properties = sorted(case_properties)
+        @memoized
+        def get_properties(case_type,
+                defaults=("name", "date-opened", "status"),
+                already_visited=()):
+
+            if case_type in already_visited:
+                return ()
+
+            get_properties_recursive = functools.partial(
+                get_properties,
+                already_visited=already_visited + (case_type,)
+            )
+
+            case_properties = set(defaults)
+            parent_types = set()
+
+            for module in app.get_modules():
+                for form in module.get_forms():
+                    if module.case_type == case_type:
+                        case_properties.update(
+                            form.actions.update_case.update.keys()
+                        )
+                    for subcase in form.actions.subcases:
+                        if subcase.case_type == case_type:
+                            case_properties.update(
+                                subcase.case_properties.keys()
+                            )
+                            parent_types.add(module.case_type)
+
+            for parent_type in parent_types:
+                for property in get_properties_recursive(parent_type):
+                    case_properties.add('parent/%s' % property)
+
+            return case_properties
+
+        case_properties = list(get_properties(module.case_type))
 
     context = {
         'domain': domain,
@@ -539,38 +713,16 @@ def view_generic(req, domain, app_id=None, module_id=None, form_id=None, is_user
     if app and not module and hasattr(app, 'translations'):
         context.update({"translations": app.translations.get(context['lang'], {})})
 
-    if app and app.get_doc_type() == 'Application':
-        try:
-            images, audio, has_error = utils.get_multimedia_filenames(app)
-        except ProcessTimedOut as e:
-            notify_exception(req)
-            messages.warning(req,
-                "We were unable to check if your forms had errors. "
-                "Refresh the page and we will try again."
-            )
-            images, audio, has_error = [], [], True
-            multimedia_images, missing_image_refs = [], 0
-            multimedia_audio, missing_audio_refs = [], 0
-        else:
-            multimedia_images, missing_image_refs = app.get_template_map(images, req=req)
-            multimedia_audio, missing_audio_refs = app.get_template_map(audio, req=req)
-        context.update({
-            'missing_image_refs': missing_image_refs,
-            'missing_audio_refs': missing_audio_refs,
-            'multimedia': {
-                'images': multimedia_images,
-                'audio': multimedia_audio,
-                'has_error': has_error
-            }
-        })
-
     if form:
-        template="app_manager/form_view.html"
+        template = "app_manager/form_view.html"
         context.update(get_form_view_context(req, form, context['langs'], is_user_registration))
     elif module:
-        template="app_manager/module_view.html"
+        template = "app_manager/module_view.html"
     else:
-        template="app_manager/app_view.html"
+        template = "app_manager/app_view.html"
+        if app:
+            context.update(get_app_view_context(req, app))
+
     error = req.GET.get('error', '')
 
     force_edit = False
@@ -582,30 +734,7 @@ def view_generic(req, domain, app_id=None, module_id=None, form_id=None, is_user
         'error':error,
         'app': app,
         })
-    if app:
-        if True:
-            # decided to do Application and RemoteApp the same way; might change later
-            commcare_build_options = {}
-            build_config = CommCareBuildConfig.fetch()
-            for version in ['1.0', '2.0']:
-                options = build_config.get_menu(version)
-                options_labels = list()
-                options_builds = list()
-                for option in options:
-                    options_labels.append(option.get_label())
-                    options_builds.append(option.build.to_string())
-                    commcare_build_options[version] = {"options" : options, "labels" : options_labels, "builds" : options_builds}
-
-        app_build_spec_string = app.build_spec.to_string()
-        app_build_spec_label = app.build_spec.get_label()
-
-        context.update({
-            "commcare_build_options" : commcare_build_options,
-            "app_build_spec_string" : app_build_spec_string,
-            "app_build_spec_label" : app_build_spec_label,
-            "app_version" : app.application_version,
-        })
-    response = render_to_response(req, template, context)
+    response = render(req, template, context)
     response.set_cookie('lang', _encode_if_unicode(context['lang']))
     return response
 
@@ -644,7 +773,8 @@ def user_registration_source(req, domain, app_id):
     return form_designer(req, domain, app_id, is_user_registration=True)
 
 @login_and_domain_required
-def form_designer(req, domain, app_id, module_id=None, form_id=None, is_user_registration=False):
+def form_designer(req, domain, app_id, module_id=None, form_id=None,
+                  is_user_registration=False):
     app = get_app(domain, app_id)
 
     if is_user_registration:
@@ -659,15 +789,14 @@ def form_designer(req, domain, app_id, module_id=None, form_id=None, is_user_reg
         except IndexError:
             return bail(req, domain, app_id, not_found="form")
 
-
-
-
     context = get_apps_base_context(req, domain, app)
     context.update(locals())
     context.update({
         'edit': True,
+        'nav_form': form if not is_user_registration else '',
+        'formdesigner': True,
     })
-    return render_to_response(req, 'app_manager/form_designer.html', context)
+    return render(req, 'app_manager/form_designer.html', context)
 
 
 
@@ -686,6 +815,7 @@ def new_app(req, domain):
     else:
         app = cls.new_app(domain, "Untitled Application", lang=lang)
     app.save()
+    _clear_app_cache(req, domain)
     app_id = app.id
 
     return back_to_main(**locals())
@@ -701,7 +831,9 @@ def new_module(req, domain, app_id):
     module_id = module.id
     app.new_form(module_id, "Untitled Form", lang)
     app.save()
-    return back_to_main(**locals())
+    response = back_to_main(**locals())
+    response.set_cookie('suppress_build_errors', 'yes')
+    return response
 
 @require_POST
 @require_can_edit_apps
@@ -714,7 +846,9 @@ def new_form(req, domain, app_id, module_id):
     app.save()
     # add form_id to locals()
     form_id = form.id
-    return back_to_main(**locals())
+    response = back_to_main(**locals())
+    response.set_cookie('suppress_build_errors', 'yes')
+    return response
 
 @require_POST
 @require_can_edit_apps
@@ -727,6 +861,7 @@ def delete_app(req, domain, app_id):
         extra_tags='html'
     )
     app.save()
+    _clear_app_cache(req, domain)
     del app_id
     return back_to_main(**locals())
 
@@ -741,6 +876,7 @@ def undo_delete_app(request, domain, record_id):
         record = DeleteApplicationRecord.get(record_id)
         record.undo()
         app_id = record.app_id
+    _clear_app_cache(request, domain)
     messages.success(request, 'Application successfully restored.')
     return back_to_main(request, domain, app_id=app_id)
 
@@ -803,7 +939,7 @@ def edit_module_attr(req, domain, app_id, module_id, attr):
         'media_image': None, 'media_audio': None,
         "case_list": ('case_list-show', 'case_list-label'),
         "task_list": ('task_list-show', 'task_list-label'),
-        }
+    }
 
     if attr not in attributes:
         return HttpResponseBadRequest()
@@ -830,7 +966,7 @@ def edit_module_attr(req, domain, app_id, module_id, attr):
             # todo: something better than nothing when invalid
             module["case_type"] = case_type
         else:
-            resp['update'].update({'#module-settings [name="case_type"]': module['case_type']})
+            resp['update'].update({'#case_type': module['case_type']})
     if should_edit("put_in_root"):
         module["put_in_root"] = json.loads(req.POST.get("put_in_root"))
     for attribute in ("name", "case_label", "referral_label"):
@@ -1100,9 +1236,12 @@ def edit_form_attr(req, domain, app_id, unique_form_id, attr):
 def rename_language(req, domain, form_unique_id):
     old_code = req.POST.get('oldCode')
     new_code = req.POST.get('newCode')
-    form, app = Form.get_form(form_unique_id, and_app=True)
+    try:
+        form, app = Form.get_form(form_unique_id, and_app=True)
+    except ResourceConflict:
+        raise Http404()
     if app.domain != domain:
-        raise Http404
+        raise Http404()
     try:
         form.rename_xform_language(old_code, new_code)
         app.save()
@@ -1156,95 +1295,41 @@ def multimedia_list_download(req, domain, app_id):
     response.write("\n".join(sorted(set(filelist))))
     return response
 
-@require_can_edit_apps
-def multimedia_upload(request, domain, kind, app_id):
-    app = get_app(domain, app_id)
-    if request.method == 'POST':
-        request.upload_handlers.insert(0, upload.HQMediaFileUploadHandler(request, domain))
-        cache_handler = upload.HQMediaUploadCacheHandler.handler_from_request(request, domain)
-        response_errors = {}
-        try:
-            if kind == 'zip':
-                form = HQMediaZipUploadForm(data=request.POST, files=request.FILES)
-            elif kind == 'file':
-                form = HQMediaFileUploadForm(data=request.POST, files=request.FILES)
-            else:
-                return Http404()
-            if form.is_valid():
-                extra_data = form.save(domain, app, request.user.username, cache_handler)
-                if cache_handler:
-                    cache_handler.delete()
-                if extra_data:
-                    completion_cache = upload.HQMediaUploadSuccessCacheHandler.handler_from_request(request, domain)
-                    if kind=='zip' and completion_cache:
-                        completion_cache.data = extra_data
-                        completion_cache.save()
-                    elif kind=='file' and completion_cache:
-                        completion_cache.data = extra_data
-                        completion_cache.save()
-                return HttpResponse(simplejson.dumps(extra_data))
-            else:
-                response_errors = form.errors
-        except TypeError:
-            pass
-        if response_errors:
-            cache_handler.defaults()
-            cache_handler.data['error_list'] = response_errors
-            cache_handler.save()
-        return HttpResponse(simplejson.dumps(response_errors))
-
-    form = HQMediaZipUploadForm()
-    progress_id = uuid.uuid4()
-
-    return render_to_response(request, "hqmedia/upload_zip.html",
-            {"domain": domain,
-             "app": app,
-             "zipform": form,
-             "progress_id": progress_id,
-             "progress_id_varname": upload.HQMediaCacheHandler.X_PROGRESS_ID})
-
-@require_can_edit_apps
-def multimedia_map(request, domain, app_id):
-    app = get_app(domain, app_id)
-    sorted_images, sorted_audio, has_error = utils.get_sorted_multimedia_refs(app)
-
-    images, missing_image_refs = app.get_template_map(sorted_images, domain)
-    audio, missing_audio_refs = app.get_template_map(sorted_audio, domain)
-
-    fileform = HQMediaFileUploadForm()
-
-    return render_to_response(request, "hqmedia/multimedia_map.html",
-                              {"domain": domain,
-                               "app": app,
-                               "multimedia": {
-                                   "images": images,
-                                   "audio": audio,
-                                   "has_error": has_error
-                               },
-                               "fileform": fileform,
-                               "progress_id_varname": upload.HQMediaCacheHandler.X_PROGRESS_ID,
-                               "missing_image_refs": missing_image_refs,
-                               "missing_audio_refs": missing_audio_refs})
-
 @require_GET
 @login_and_domain_required
 def commcare_profile(req, domain, app_id):
     app = get_app(domain, app_id)
     return HttpResponse(json.dumps(app.profile))
 
+
 @require_POST
 @require_can_edit_apps
-def edit_commcare_profile(req, domain, app_id):
+def edit_commcare_settings(request, domain, app_id):
+    sub_responses = (
+        edit_commcare_profile(request, domain, app_id),
+        edit_app_attr(request, domain, app_id, 'all'),
+    )
+    response = {}
+    for sub_response in sub_responses:
+        response.update(
+            json.loads(sub_response.content)
+        )
+    return json_response(response)
+
+@require_POST
+@require_can_edit_apps
+def edit_commcare_profile(request, domain, app_id):
     try:
-        profile = json.loads(req.POST.get('profile'))
+        settings = json.loads(request.raw_post_data)
     except TypeError:
         return HttpResponseBadRequest(json.dumps({
-            'reason': "Must have a param called profile set to: {\"properites\": {...}, \"features\": {...}}"
+            'reason': 'POST body must be of the form:'
+                      '{"properties": {...}, "features": {...}}'
         }))
     app = get_app(domain, app_id)
     changed = defaultdict(dict)
     for type in ["features", "properties"]:
-        for name, value in profile.get(type, {}).items():
+        for name, value in settings.get(type, {}).items():
             if type not in app.profile:
                 app.profile[type] = {}
             app.profile[type][name] = value
@@ -1252,6 +1337,7 @@ def edit_commcare_profile(req, domain, app_id):
     response_json = {"status": "ok", "changed": changed}
     app.save(response_json)
     return json_response(response_json)
+
 
 @require_POST
 @require_can_edit_apps
@@ -1366,13 +1452,18 @@ def delete_app_lang(req, domain, app_id):
 
 @require_POST
 @require_can_edit_apps
-def edit_app_attr(req, domain, app_id, attr):
+def edit_app_attr(request, domain, app_id, attr):
     """
     Called to edit any (supported) app attribute, given by attr
 
     """
     app = get_app(domain, app_id)
-    lang = req.COOKIES.get('lang', (app.langs or ['en'])[0])
+    lang = request.COOKIES.get('lang', (app.langs or ['en'])[0])
+
+    try:
+        hq_settings = json.loads(request.raw_post_data)['hq']
+    except ValueError:
+        hq_settings = request.POST
 
     attributes = [
         'all',
@@ -1392,38 +1483,41 @@ def edit_app_attr(req, domain, app_id, attr):
         return HttpResponseBadRequest()
 
     def should_edit(attribute):
-        return attribute == attr or ('all' == attr and req.POST.has_key(attribute))
+        return attribute == attr or ('all' == attr and attribute in hq_settings)
     resp = {"update": {}}
     # For either type of app
-    if should_edit("recipients"):
-        recipients = req.POST['recipients']
-        app.recipients = recipients
+    easy_attrs = (
+        ('application_version', None),
+        ('build_spec', BuildSpec.from_string),
+        ('case_sharing', None),
+        ('cloudcare_enabled', None),
+        ('manage_urls', None),
+        ('name', None),
+        ('platform', None),
+        ('recipients', None),
+        ('show_user_registration', None),
+        ('text_input', None),
+        ('use_custom_suite', None),
+    )
+    for attribute, transformation in easy_attrs:
+        if should_edit(attribute):
+            value = hq_settings[attribute]
+            if transformation:
+                value = transformation(value)
+            setattr(app, attribute, value)
+
     if should_edit("name"):
-        name = req.POST["name"]
-        app.name = name
-        resp['update'].update({'.variable-app_name': name})
+        resp['update'].update({'.variable-app_name': hq_settings['name']})
+
     if should_edit("success_message"):
-        success_message = req.POST['success_message']
+        success_message = hq_settings['success_message']
         app.success_message[lang] = success_message
-    if should_edit("use_commcare_sense"):
-        use_commcare_sense = json.loads(req.POST.get('use_commcare_sense', 'false'))
-        app.use_commcare_sense = use_commcare_sense
-    if should_edit("text_input"):
-        text_input = req.POST['text_input']
-        app.text_input = text_input
-    if should_edit("platform"):
-        platform = req.POST['platform']
-        app.platform = platform
+
     if should_edit("build_spec"):
-        build_spec = req.POST['build_spec']
-        app.build_spec = BuildSpec.from_string(build_spec)
         resp['update']['commcare-version'] = app.commcare_minor_release
-    if should_edit("show_user_registration"):
-        app.show_user_registration = bool(json.loads(req.POST['show_user_registration']))
-    if should_edit("use_custom_suite"):
-        app.use_custom_suite = bool(json.loads(req.POST['use_custom_suite']))
+
     if should_edit("admin_password"):
-        admin_password = req.POST.get('admin_password')
+        admin_password = hq_settings.get('admin_password')
         if admin_password:
             app.set_admin_password(admin_password)
 
@@ -1431,13 +1525,7 @@ def edit_app_attr(req, domain, app_id, attr):
     if should_edit("cloudcare_enabled"):
         if app.get_doc_type() not in ("Application",):
             raise Exception("App type %s does not support cloudcare" % app.get_doc_type())
-        app.cloudcare_enabled = bool(json.loads(req.POST['cloudcare_enabled']))
 
-    if should_edit("application_version"):
-        app.application_version = req.POST['application_version']
-
-    if should_edit('case_sharing'):
-        app.case_sharing = bool(json.loads(req.POST['case_sharing']))
 
     def require_remote_app():
         if app.get_doc_type() not in ("RemoteApp",):
@@ -1446,15 +1534,15 @@ def edit_app_attr(req, domain, app_id, attr):
     # For RemoteApps
     if should_edit("profile_url"):
         require_remote_app()
-        app['profile_url'] = req.POST['profile_url']
+        app['profile_url'] = hq_settings['profile_url']
     if should_edit("manage_urls"):
         require_remote_app()
-        app.manage_urls = bool(json.loads(req.POST['manage_urls']))
 
     app.save(resp)
     # this is a put_attachment, so it has to go after everything is saved
     if should_edit("custom_suite"):
-        app.set_custom_suite(req.POST['custom_suite'])
+        app.set_custom_suite(hq_settings['custom_suite'])
+
     return HttpResponse(json.dumps(resp))
 
 
@@ -1511,11 +1599,6 @@ def save_copy(req, domain, app_id):
         try:
             copy = app.save_copy(comment=comment, user_id=req.couch_user.get_id,
                                  previous_version=app.get_latest_saved())
-        except Exception as e:
-            copy = None
-            if settings.DEBUG:
-                raise
-            messages.error(req, "Unexpected error saving build:\n%s" % e)
         finally:
             # To make a RemoteApp always available for building
             if app.is_remote_app():
@@ -1531,6 +1614,27 @@ def save_copy(req, domain, app_id):
         "error_html": render_to_string('app_manager/partials/build_errors.html', {
             'app': get_app(domain, app_id),
             'build_errors': errors,
+            'domain': domain,
+            'langs': langs,
+            'lang': lang
+        }),
+    })
+
+def validate_form_for_build(request, domain, app_id, unique_form_id):
+    app = get_app(domain, app_id)
+    try:
+        form = app.get_form(unique_form_id)
+    except KeyError:
+        # this can happen if you delete the form from another page
+        raise Http404()
+    errors = form.validate_for_build()
+    lang, langs = get_langs(request, app)
+    return json_response({
+        "error_html": render_to_string('app_manager/partials/build_errors.html', {
+            'app': app,
+            'form': form,
+            'build_errors': errors,
+            'not_actual_build': True,
             'domain': domain,
             'langs': langs,
             'lang': lang
@@ -1581,8 +1685,17 @@ def download_index(req, domain, app_id, template="app_manager/download_index.htm
     if req.app.copy_of:
         files = [(path[len('files/'):], req.app.fetch_attachment(path)) for path in req.app._attachments if path.startswith('files/')]
     else:
-        files = sorted(req.app.create_all_files().items())
-    return render_to_response(req, template, {
+        try:
+            files = sorted(req.app.create_all_files().items())
+        except Exception:
+            messages.error(req, _(
+                "We were unable to get your files "
+                "because your Application has errors. "
+                "Please click <strong>Make New Version</strong> "
+                "under <strong>Deploy</strong> "
+                "for feedback on how to fix these errors."
+            ), extra_tags='html')
+    return render(req, template, {
         'app': req.app,
         'files': files,
     })
@@ -1600,8 +1713,9 @@ def download_file(req, domain, app_id, path):
         response = HttpResponse()
     try:
         response.write(req.app.fetch_attachment('files/%s' % path))
+        assert req.app.copy_of
         return response
-    except ResourceNotFound:
+    except (ResourceNotFound, AssertionError):
         callback, callback_args, callback_kwargs = RegexURLResolver(r'^', 'corehq.apps.app_manager.download_urls').resolve(path)
         return callback(req, domain, app_id, *callback_args, **callback_kwargs)
 
@@ -1616,7 +1730,7 @@ def download_profile(req, domain, app_id):
     )
 
 def odk_install(req, domain, app_id):
-    return render_to_response(req, "app_manager/odk_install.html",
+    return render(req, "app_manager/odk_install.html",
             {"domain": domain, "app": get_app(domain, app_id)})
 
 def odk_qr_code(req, domain, app_id):
@@ -1643,6 +1757,17 @@ def download_suite(req, domain, app_id):
     return HttpResponse(
         req.app.create_suite()
     )
+
+@safe_download
+def download_media_suite(req, domain, app_id):
+    """
+    See Application.create_media_suite
+
+    """
+    return HttpResponse(
+        req.app.create_media_suite()
+    )
+
 
 @safe_download
 def download_app_strings(req, domain, app_id, lang):
@@ -1673,34 +1798,6 @@ def download_user_registration(req, domain, app_id):
     return HttpResponse(
         req.app.get_user_registration().render_xform()
     )
-
-@safe_download
-def download_multimedia_zip(req, domain, app_id):
-    app = get_app(domain, app_id)
-    temp = StringIO()
-    hqZip = zipfile.ZipFile(temp, "a")
-    errors = []
-    for form_path, media_item in app.multimedia_map.items():
-        try:
-            media_cls = CommCareMultimedia.get_doc_class(media_item.media_type)
-            media = media_cls.get(media_item.multimedia_id)
-            data, content_type = media.get_display_file()
-            path = form_path.replace(utils.MULTIMEDIA_PREFIX, "")
-            if not isinstance(data, unicode):
-                hqZip.writestr(os.path.join(path), data)
-        except (NameError, ResourceNotFound) as e:
-            errors.append("[%s] ERROR: %s" % (form_path, e))
-            logging.warning("%s on %s %s" % (e, form_path, media_item))
-    hqZip.close()
-
-    if errors:
-        return HttpResponseServerError("Errors were encountered while retrieving media for this application.<br /> %s" % "<br />".join(errors))
-
-    response = HttpResponse(mimetype="application/zip")
-    set_file_download(response, 'commcare.zip')
-    temp.seek(0)
-    response.write(temp.read())
-    return response
 
 
 @safe_download
@@ -1777,7 +1874,7 @@ def emulator_page(req, domain, app_id, template):
     build_path = "/builds/{version}/{build_number}/Generic/WebDemo/".format(
         **copied_app.get_preview_build()._doc
     )
-    return render_to_response(req, template, {
+    return render(req, template, {
         'domain': domain,
         'app': app,
         'build_path': build_path,
@@ -1852,10 +1949,10 @@ def _questions_for_form(request, form, langs):
         def add_message(self, type, message):
             self.messages[type].append(message)
 
-        def error(self, request, message):
+        def error(self, request, message, *args, **kwargs):
             self.add_message('error', message)
 
-        def warning(self, request, message):
+        def warning(self, request, message, *args, **kwargs):
             self.add_message('warning', message)
 
     m = FakeMessages()
@@ -1907,6 +2004,6 @@ def summary(request, domain, app_id, should_edit=True):
     context['summary'] = True
 
     if should_edit:
-        return render_to_response(request, "app_manager/summary.html", context)
+        return render(request, "app_manager/summary.html", context)
     else:
-        return render_to_response(request, "app_manager/exchange_summary.html", context)
+        return render(request, "app_manager/exchange_summary.html", context)

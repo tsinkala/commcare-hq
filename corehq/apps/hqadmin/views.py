@@ -2,41 +2,43 @@ from datetime import timedelta, datetime
 import json
 from copy import deepcopy
 import logging
+from collections import defaultdict
+from StringIO import StringIO
+import os
+
 from django.http import HttpResponseRedirect, HttpResponse
 from django.core.urlresolvers import reverse
-import rawes
-from casexml.apps.case.models import CommCareCase
-from corehq.apps.builds.models import CommCareBuildConfig, BuildSpec
-from corehq.apps.domain.models import Domain
-from corehq.apps.hqadmin.escheck import check_cluster_health, check_case_index
-from corehq.apps.reports.datatables import DataTablesColumn, DataTablesHeader, DTSortType
-from corehq.apps.reports.util import make_form_couch_key
-from corehq.apps.sms.models import SMSLog
-from corehq.apps.users.models import  CommCareUser
-from couchforms.models import XFormInstance
-from dimagi.utils.couch.database import get_db
-from collections import defaultdict
-from corehq.apps.domain.decorators import  require_superuser
-from dimagi.utils.decorators.datespan import datespan_in_request
-from dimagi.utils.parsing import json_format_datetime, string_to_datetime
-from dimagi.utils.web import json_response, render_to_response
+from django.shortcuts import render
 from django.views.decorators.cache import cache_page
-from couchexport.export import export_raw, export_from_tables
-from couchexport.shortcuts import export_response
-from couchexport.models import Format
-from StringIO import StringIO
 from django.template.defaultfilters import yesno
-from dimagi.utils.excel import WorkbookJSONReader
-from dimagi.utils.decorators.view import get_file
 from django.contrib import messages
 from django.conf import settings
 from restkit import Resource
-import os
 from django.core import cache
+from corehq.apps.hqadmin.models import HqDeploy
+from corehq.apps.builds.models import CommCareBuildConfig, BuildSpec
+from corehq.apps.domain.models import Domain
+from corehq.apps.hqadmin.escheck import check_cluster_health, check_case_index, check_xform_index, check_exchange_index
+from corehq.apps.reports.datatables import DataTablesColumn, DataTablesHeader, DTSortType
+from corehq.apps.reports.util import make_form_couch_key
+from corehq.apps.sms.models import SMSLog
+from corehq.apps.users.models import  CommCareUser, WebUser
+from couchforms.models import XFormInstance
+from dimagi.utils.couch.database import get_db, is_bigcouch
+from corehq.apps.domain.decorators import  require_superuser
+from dimagi.utils.decorators.datespan import datespan_in_request
+from dimagi.utils.parsing import json_format_datetime, string_to_datetime
+from dimagi.utils.web import json_response
+from couchexport.export import export_raw, export_from_tables
+from couchexport.shortcuts import export_response
+from couchexport.models import Format
+from dimagi.utils.excel import WorkbookJSONReader
+from dimagi.utils.decorators.view import get_file
+
 
 @require_superuser
 def default(request):
-    return HttpResponseRedirect(reverse("domain_list"))
+    return HttpResponseRedirect(reverse('admin_report_dispatcher', args=('domains',)))
 
 datespan_default = datespan_in_request(
     from_param="startdate",
@@ -50,66 +52,7 @@ def get_hqadmin_base_context(request):
         "domain": None,
     }
 
-def _all_domain_stats():
-    webuser_counts = defaultdict(lambda: 0)
-    commcare_counts = defaultdict(lambda: 0)
-    form_counts = defaultdict(lambda: 0)
-    case_counts = defaultdict(lambda: 0)
-    
-    for row in get_db().view('users/by_domain', startkey=["active"], 
-                             endkey=["active", {}], group_level=3).all():
-        _, domain, doc_type = row['key']
-        value = row['value']
-        {
-            'WebUser': webuser_counts,
-            'CommCareUser': commcare_counts
-        }[doc_type][domain] = value
 
-    key = make_form_couch_key(None)
-    form_counts.update(dict([(row["key"][1], row["value"]) for row in \
-                                get_db().view("reports_forms/all_forms",
-                                    group=True,
-                                    group_level=2,
-                                    startkey=key,
-                                    endkey=key+[{}]
-                             ).all()]))
-    
-    case_counts.update(dict([(row["key"][0], row["value"]) for row in \
-                             get_db().view("hqcase/types_by_domain", 
-                                           group=True,group_level=1).all()]))
-    
-    return {"web_users": webuser_counts, 
-            "commcare_users": commcare_counts,
-            "forms": form_counts,
-            "cases": case_counts}
-
-@require_superuser
-def domain_list(request):
-    # one wonders if this will eventually have to paginate
-    domains = Domain.get_all()
-    all_stats = _all_domain_stats()
-    for dom in domains:
-        dom.web_users = int(all_stats["web_users"][dom.name])
-        dom.commcare_users = int(all_stats["commcare_users"][dom.name])
-        dom.cases = int(all_stats["cases"][dom.name])
-        dom.forms = int(all_stats["forms"][dom.name])
-        dom.admins = [row["doc"]["email"] for row in get_db().view("users/admins_by_domain", key=dom.name, reduce=False, include_docs=True).all()]
-
-    context = get_hqadmin_base_context(request)
-    context.update({"domains": domains})
-    context['layout_flush_content'] = True
-
-    headers = DataTablesHeader(
-        DataTablesColumn("Domain"),
-        DataTablesColumn("# Web Users", sort_type=DTSortType.NUMERIC),
-        DataTablesColumn("# Mobile Workers", sort_type=DTSortType.NUMERIC),
-        DataTablesColumn("# Cases", sort_type=DTSortType.NUMERIC),
-        DataTablesColumn("# Submitted Forms", sort_type=DTSortType.NUMERIC),
-        DataTablesColumn("Domain Admins")
-    )
-    context["headers"] = headers
-    context["aoColumns"] = headers.render_aoColumns
-    return render_to_response(request, "hqadmin/domain_list.html", context)
 
 @require_superuser
 def active_users(request):
@@ -228,7 +171,7 @@ def global_report(request, template="hqadmin/global.html", as_export=False):
 
     context['hide_filters'] = True
 
-    return render_to_response(request, template, context)
+    return render(request, template, context)
 
 @require_superuser
 def commcare_version_report(request, template="hqadmin/commcare_version.html"):
@@ -256,7 +199,7 @@ def commcare_version_report(request, template="hqadmin/commcare_version.html"):
     context = get_hqadmin_base_context(request)
     context.update({'tables': tables})
     context['hide_filters'] = True
-    return render_to_response(request, template, context)
+    return render(request, template, context)
 
 
 @cache_page(60*5)
@@ -284,7 +227,10 @@ def _cacheable_domain_activity_report(request):
 
         for form in forms:
             user_id = form.get('user_id')
-            time = string_to_datetime(form['submission_time']).replace(tzinfo = None)
+            try:
+                time = string_to_datetime(form['submission_time']).replace(tzinfo = None)
+            except ValueError:
+                continue
             if user_id in domain['users']:
                 for i, date in enumerate(dates):
                     if time > date:
@@ -306,7 +252,7 @@ def domain_activity_report(request, template="hqadmin/domain_activity_report.htm
     headers.add_column(DataTablesColumn("All Users"))
     context["headers"] = headers
     context["aoColumns"] = headers.render_aoColumns
-    return render_to_response(request, template, context)
+    return render(request, template, context)
 
 @datespan_default
 @require_superuser
@@ -338,7 +284,7 @@ def message_log_report(request):
     })
 
     context['layout_flush_content'] = True
-    return render_to_response(request, "hqadmin/message_log_report.html", context)
+    return render(request, "hqadmin/message_log_report.html", context)
 
 def _get_emails():
     return [r['key'] for r in get_db().view('hqadmin/emails').all()]
@@ -377,7 +323,8 @@ def submissions_errors(request, template="hqadmin/submissions_errors_report.html
         data = get_db().view("phonelog/devicelog_data",
             reduce=True,
             startkey=key+[datespan.startdate_param_utc],
-            endkey=key+[datespan.enddate_param_utc]
+            endkey=key+[datespan.enddate_param_utc],
+            stale=settings.COUCH_STALE_QUERY,
         ).first()
         num_errors = 0
         num_warnings = 0
@@ -410,7 +357,7 @@ def submissions_errors(request, template="hqadmin/submissions_errors_report.html
     context["headers"] = headers
     context["aoColumns"] = headers.render_aoColumns
 
-    return render_to_response(request, template, context)
+    return render(request, template, context)
 
 @require_superuser
 @get_file("file")
@@ -434,7 +381,7 @@ def update_domains(request):
                         messages.warning(request, "No domain with name %s found" % name)
                         fail_count += 1
                 except Exception, e:
-                    messages.warning("Update for %s failed: %s" % e)
+                    messages.warning(request, "Update for %s failed: %s" % (row.get("name", '<No Name>'), e))
                     fail_count += 1
             if success_count:
                 messages.success(request, "%s domains successfully updated" % success_count)
@@ -446,6 +393,7 @@ def update_domains(request):
             
     # one wonders if this will eventually have to paginate
     domains = Domain.get_all()
+    from corehq.apps.domain.calculations import _all_domain_stats
     all_stats = _all_domain_stats()
     for dom in domains:
         dom.web_users = int(all_stats["web_users"][dom.name])
@@ -496,7 +444,7 @@ def update_domains(request):
     )
     context["headers"] = headers
     context["aoColumns"] = headers.render_aoColumns
-    return render_to_response(request, "hqadmin/domain_update_properties.html", context)
+    return render(request, "hqadmin/domain_update_properties.html", context)
 
 @require_superuser
 def domain_list_download(request):
@@ -529,15 +477,16 @@ def system_ajax(request):
     db = XFormInstance.get_db()
     ret = {}
     if type == "_active_tasks":
-        tasks = filter(lambda x: x['type'] == "indexer", db.server.active_tasks())
-#        tasks = [{'type': 'indexer', 'pid': 'foo', 'database': 'mock',
-#            'design_document': 'mockymock', 'progress': 0,
-#            'started_on': 1349906040.723517, 'updated_on': 1349905800.679458,
-#            'total_changes': 1023},
-#            {'type': 'indexer', 'pid': 'foo', 'database': 'mock',
-#            'design_document': 'mockymock', 'progress': 70,
-#            'started_on': 1349906040.723517, 'updated_on': 1349905800.679458,
-#            'total_changes': 1023}]
+        tasks = [] if is_bigcouch() else filter(lambda x: x['type'] == "indexer", db.server.active_tasks())
+        #for reference structure is:
+        #        tasks = [{'type': 'indexer', 'pid': 'foo', 'database': 'mock',
+        #            'design_document': 'mockymock', 'progress': 0,
+        #            'started_on': 1349906040.723517, 'updated_on': 1349905800.679458,
+        #            'total_changes': 1023},
+        #            {'type': 'indexer', 'pid': 'foo', 'database': 'mock',
+        #            'design_document': 'mockymock', 'progress': 70,
+        #            'started_on': 1349906040.723517, 'updated_on': 1349905800.679458,
+        #            'total_changes': 1023}]
         return HttpResponse(json.dumps(tasks), mimetype='application/json')
     elif type == "_stats":
         return HttpResponse(json.dumps({}), mimetype = 'application/json')
@@ -606,7 +555,8 @@ def system_info(request):
     context['celery_update'] = request.GET.get('celery_update', 10000)
 
     context['hide_filters'] = True
-    context['current_system'] = os.uname()[1]
+    if hasattr(os, 'uname'):
+        context['current_system'] = os.uname()[1]
 
     #from dimagi.utils import gitinfo
     #context['current_ref'] = gitinfo.get_project_info()
@@ -617,7 +567,9 @@ def system_info(request):
     else:
         couchlog_resource = Resource("http://%s:%s@%s/" % (settings.COUCH_USERNAME, settings.COUCH_PASSWORD, settings.COUCH_SERVER_ROOT))
     try:
-        context['couch_log'] = couchlog_resource.get('_log', params_dict={'bytes': 2000 }).body_string()
+        #todo, fix on bigcouch/cloudant
+        context['couch_log'] = "Will be back online shortly" if is_bigcouch() \
+            else couchlog_resource.get('_log', params_dict={'bytes': 2000 }).body_string()
     except Exception, ex:
         context['couch_log'] = "unable to open couch log: %s" % ex
 
@@ -683,11 +635,41 @@ def system_info(request):
     context['memcached_status'] = mc_status
     context['memcached_results'] = mc_results
 
+    context['last_deploy'] = HqDeploy.get_latest()
 
     #elasticsearch status
     #node status
     context.update(check_cluster_health())
     context.update(check_case_index())
+    context.update(check_xform_index())
+    context.update(check_exchange_index())
 
-    return render_to_response(request, "hqadmin/system_info.html", context)
+    return render(request, "hqadmin/system_info.html", context)
 
+@require_superuser
+def noneulized_users(request, template="hqadmin/noneulized_users.html"):
+    context = get_hqadmin_base_context(request)
+
+    days = request.GET.get("days", None)
+    days = int(days) if days else 60
+    days_ago = datetime.now() - timedelta(days=days)
+
+    users = WebUser.view("eula_report/noneulized_users",
+        reduce=False,
+        include_docs=True,
+        startkey =["WebUser", days_ago.strftime("%Y-%m-%dT%H:%M:%SZ")],
+        endkey =["WebUser", {}]
+    ).all()
+
+    context.update({"users": filter(lambda user: not user.is_dimagi, users), "days": days})
+
+    headers = DataTablesHeader(
+        DataTablesColumn("Username"),
+        DataTablesColumn("Date of Last Login"),
+        DataTablesColumn("couch_id"),
+    )
+    context['layout_flush_content'] = True
+    context["headers"] = headers
+    context["aoColumns"] = headers.render_aoColumns
+
+    return render(request, template, context)

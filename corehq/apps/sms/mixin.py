@@ -1,7 +1,9 @@
 import re
 from couchdbkit.ext.django.schema import *
 from django.conf import settings
+from dimagi.utils.couch.database import get_safe_write_kwargs
 from dimagi.utils.modules import try_import
+from corehq.apps.domain.models import Domain
 
 phone_number_re = re.compile("^\d+$")
 
@@ -27,9 +29,18 @@ class VerifiedNumber(Document):
     ivr_backend_id  = StringProperty() # points to a MobileBackend
     verified        = BooleanProperty()
     
+    def __repr__(self):
+        return '{phone} in {domain} (owned by {owner})'.format(
+            phone=self.phone_number, domain=self.domain,
+            owner=self.owner_id
+        )
+
     @property
     def backend(self):
-        return MobileBackend.load(self.backend_id)
+        if self.backend_id is None or self.backend_id == "":
+            return MobileBackend.auto_load("+%s" % self.phone_number, self.domain)
+        else:
+            return MobileBackend.load(self.backend_id)
     
     @property
     def ivr_backend(self):
@@ -79,8 +90,13 @@ class MobileBackend(Document):
         """
         phone_number = add_plus(phone_number)
 
-        # TODO: support domain-specific settings
+        # Use the domain-wide default backend if possible
+        if domain is not None:
+            domain_obj = Domain.get_by_name(domain, strict=True)
+            if domain_obj.default_sms_backend_id is not None and domain_obj.default_sms_backend_id != "":
+                return cls.load(domain_obj.default_sms_backend_id)
         
+        # Use the appropriate system-wide default backend
         global_backends = getattr(settings, 'SMS_BACKENDS', {})
         backend_mapping = sorted(global_backends.iteritems(),
                                  key=lambda (prefix, backend): len(prefix),
@@ -131,6 +147,11 @@ class MobileBackend(Document):
             raise RuntimeError('could not find outbound module %s' % self.outbound_module)
         return module
 
+    def get_cleaned_outbound_params(self):
+        # for passing to functions, ensure the keys are all strings
+        return dict((str(k), v) for k, v in self.outbound_params.items())
+
+
 class CommCareMobileContactMixin(object):
     """
     Defines a mixin to manage a mobile contact's information. This mixin must be used with
@@ -167,7 +188,6 @@ class CommCareMobileContactMixin(object):
         return  the VerifiedNumber entry
         """
         verified = self.get_verified_numbers(True)
-
         if not phone:
             # for backwards compatibility with code that assumes only one verified phone #
             if len(verified) > 0:
@@ -203,7 +223,7 @@ class CommCareMobileContactMixin(object):
         if v is not None and (v.owner_doc_type != self.doc_type or v.owner_id != self._id):
             raise PhoneNumberInUseException("Phone number is already in use.")
     
-    def save_verified_number(self, domain, phone_number, verified, backend_id, ivr_backend_id=None):
+    def save_verified_number(self, domain, phone_number, verified, backend_id, ivr_backend_id=None, only_one_number_allowed=False):
         """
         Saves the given phone number as this contact's verified phone number.
         
@@ -213,7 +233,10 @@ class CommCareMobileContactMixin(object):
         """
         phone_number = strip_plus(phone_number)
         self.verify_unique_number(phone_number)
-        v = self.get_verified_number(phone_number)
+        if only_one_number_allowed:
+            v = self.get_verified_number()
+        else:
+            v = self.get_verified_number(phone_number)
         if v is None:
             v = VerifiedNumber(
                 owner_doc_type = self.doc_type,
@@ -224,7 +247,7 @@ class CommCareMobileContactMixin(object):
         v.verified = verified
         v.backend_id = backend_id
         v.ivr_backend_id = ivr_backend_id
-        v.save()
+        v.save(**get_safe_write_kwargs())
 
     def delete_verified_number(self, phone_number=None):
         """
