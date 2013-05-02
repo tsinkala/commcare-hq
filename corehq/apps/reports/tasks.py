@@ -1,17 +1,17 @@
 from datetime import datetime
-from celery.log import get_task_logger
 from celery.schedules import crontab
 from celery.task import periodic_task, task
-from django.core.cache import cache
-from corehq.apps.domain.models import Domain
-from corehq.apps.hqadmin.escheck import check_cluster_health, check_case_index, CLUSTER_HEALTH
+from celery.utils.log import get_task_logger
+from corehq.apps.domain.calculations import CALC_FNS, _all_domain_stats
+from corehq.apps.hqadmin.escheck import check_cluster_health, check_case_index, CLUSTER_HEALTH, check_xform_index, check_exchange_index
 from corehq.apps.reports.models import (ReportNotification,
-    UnsupportedScheduledReportError, HQGroupExportConfiguration,
-    CaseActivityReportCache)
+    UnsupportedScheduledReportError, HQGroupExportConfiguration )
+from corehq.elastic import get_es
+from corehq.pillows.mappings.domain_mapping import DOMAIN_INDEX
 from couchexport.groupexports import export_for_group
 from dimagi.utils.logging import notify_exception
 
-logging = get_task_logger()
+logging = get_task_logger(__name__)
 
 @periodic_task(run_every=crontab(hour=[8,14], minute="0", day_of_week="*"))
 def check_es_index():
@@ -24,6 +24,8 @@ def check_es_index():
     es_status = {}
     es_status.update(check_cluster_health())
     es_status.update(check_case_index())
+    es_status.update(check_xform_index())
+    es_status.update(check_exchange_index())
 
     do_notify = False
     message = []
@@ -31,9 +33,10 @@ def check_es_index():
         do_notify=True
         message.append("Cluster health is red - something is up with the ES machine")
 
-    if es_status['case_status'] == False:
-        do_notify=True
-        message.append("Elasticsearch Case Index Issue: %s" % es_status['case_message'])
+    for prefix in ['hqcases', 'xforms','cc_exchange']:
+        if es_status.get('%s_status' % prefix, False) == False:
+            do_notify=True
+            message.append("Elasticsearch %s Index Issue: %s" % (prefix, es_status['%s_message' % prefix]))
 
     if do_notify:
         notify_exception(None, message='\n'.join(message))
@@ -71,55 +74,28 @@ def saved_exports():
     for row in HQGroupExportConfiguration.view("groupexport/by_domain", reduce=False).all():
         export_for_group(row["id"], "couch")
 
+@periodic_task(run_every=crontab(hour="12, 22", minute="0", day_of_week="*"))
+def update_calculated_properties():
+    es = get_es()
 
-
-@periodic_task(run_every=crontab(hour=range(0,23,3), minute="0"))
-def build_case_activity_report():
-    logging.info("Building Case Activity Reports.")
-    all_domains = Domain.get_all()
-    for domain in all_domains:
-        CaseActivityReportCache.build_report(domain)
-
-
-@task
-def report_cacher(report, context_func, cache_key,
-                  current_cache=None, refresh_stale=1800, cache_timeout=3600):
-    data_key = report.queried_path
-    data = getattr(report, context_func)
-    _cache_data(data, cache_key,
-        current_cache=current_cache, refresh_stale=refresh_stale,
-        cache_timeout=cache_timeout, data_key=data_key)
-
-@task
-def user_cacher(domain, cache_key,
-                current_cache=None, refresh_stale=1800, cache_timeout=3600, **kwargs):
-    from corehq.apps.reports.util import get_all_users_by_domain
-    data = get_all_users_by_domain(domain, **kwargs)
-    _cache_data(data, cache_key,
-        current_cache=current_cache,
-        refresh_stale=refresh_stale,
-        cache_timeout=cache_timeout)
-
-
-def _cache_data(data, cache_key,
-                       current_cache=None, refresh_stale=1800, cache_timeout=3600, data_key="data"):
-    last_cached = None
-    if current_cache is not None:
-        last_cached = current_cache.get('set_on')
-        if not isinstance(last_cached, datetime):
-            last_cached = None
-
-    diff = None
-    if last_cached is not None:
-        td = datetime.utcnow() - last_cached
-        diff = td.seconds + td.days * 24 * 3600
-
-    if diff is None or diff >= refresh_stale:
-        if isinstance(current_cache, dict):
-            new_cache = current_cache.copy()
-        else:
-            new_cache = dict()
-        new_cache['set_on'] = datetime.utcnow()
-        new_cache[data_key] = data
-        cache.set(cache_key, new_cache, cache_timeout)
-
+    #todo: use some sort of ES scrolling/paginating
+    results = es.get(DOMAIN_INDEX + "/hqdomain/_search", data={"size": 99999})['hits']['hits']
+    all_stats = _all_domain_stats()
+    for r in results:
+        dom = r["_source"]["name"]
+        calced_props = {
+            "cp_n_web_users": int(all_stats["web_users"][dom]),
+            "cp_n_active_cc_users": int(CALC_FNS["mobile_users"](dom)),
+            "cp_n_cc_users": int(all_stats["commcare_users"][dom]),
+            "cp_n_active_cases": int(CALC_FNS["cases_in_last"](dom, 120)),
+            "cp_n_cases": int(all_stats["cases"][dom]),
+            "cp_n_forms": int(all_stats["forms"][dom]),
+            "cp_first_form": CALC_FNS["first_form_submission"](dom, False),
+            "cp_last_form": CALC_FNS["last_form_submission"](dom, False),
+            "cp_is_active": CALC_FNS["active"](dom),
+            "cp_has_app": CALC_FNS["has_app"](dom),
+        }
+        if calced_props['cp_first_form'] == 'No forms':
+            del calced_props['cp_first_form']
+            del calced_props['cp_last_form']
+        es.post("%s/hqdomain/%s/_update" % (DOMAIN_INDEX, r["_id"]), data={"doc": calced_props})

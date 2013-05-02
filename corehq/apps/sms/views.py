@@ -1,24 +1,28 @@
 #!/usr/bin/env python
 # vim: ai ts=4 sts=4 et sw=4 encoding=utf-8
-import json
-
 import logging
 from datetime import datetime
 import re
 from django.contrib.auth import authenticate
 from django.core.urlresolvers import reverse
-from django.http import HttpResponse, HttpResponseRedirect, HttpResponseBadRequest
+from django.http import HttpResponse, HttpResponseRedirect, HttpResponseBadRequest, Http404
+from django.shortcuts import render
+
 from corehq.apps.sms.api import send_sms, incoming, send_sms_with_backend
 from corehq.apps.users.models import CouchUser
 from corehq.apps.users import models as user_models
-from corehq.apps.sms.models import SMSLog, INCOMING
+from corehq.apps.sms.models import SMSLog, INCOMING, ForwardingRule
+from corehq.apps.sms.forms import ForwardingRuleForm
 from corehq.apps.groups.models import Group
-from dimagi.utils.web import render_to_response
-from corehq.apps.domain.decorators import login_and_domain_required, login_or_digest, domain_admin_required
+from corehq.apps.domain.decorators import login_and_domain_required, login_or_digest, domain_admin_required, require_superuser
 from dimagi.utils.couch.database import get_db
 from django.contrib import messages
 from corehq.apps.reports import util as report_utils
 from django.views.decorators.csrf import csrf_exempt
+
+@login_and_domain_required
+def default(request, domain):
+    return HttpResponseRedirect(reverse(messaging, args=[domain]))
 
 @login_and_domain_required
 def messaging(request, domain, template="sms/default.html"):
@@ -30,7 +34,7 @@ def messaging(request, domain, template="sms/default.html"):
     context['timezone'] = tz
     context['timezone_now'] = datetime.now(tz=tz)
     context['layout_flush_content'] = True
-    return render_to_response(request, template, context)
+    return render(request, template, context)
 
 @login_and_domain_required
 def compose_message(request, domain, template="sms/compose.html"):
@@ -40,7 +44,7 @@ def compose_message(request, domain, template="sms/compose.html"):
     tz = report_utils.get_timezone(request.couch_user.user_id, domain)
     context['timezone'] = tz
     context['timezone_now'] = datetime.now(tz=tz)
-    return render_to_response(request, template, context)
+    return render(request, template, context)
 
 def post(request, domain):
     """
@@ -201,7 +205,7 @@ def message_test(request, domain, phone_number):
     context['timezone_now'] = datetime.now(tz=tz)
     context['layout_flush_content'] = True
     context['phone_number'] = phone_number
-    return render_to_response(request, "sms/message_tester.html", context)
+    return render(request, "sms/message_tester.html", context)
 
 @csrf_exempt
 @login_or_digest
@@ -219,6 +223,57 @@ def api_send_sms(request, domain):
     else:
         return HttpResponseBadRequest("POST Expected.")
 
+@login_and_domain_required
+@require_superuser
+def list_forwarding_rules(request, domain):
+    forwarding_rules = ForwardingRule.view("sms/forwarding_rule", key=[domain], include_docs=True).all()
+    
+    context = {
+        "domain" : domain,
+        "forwarding_rules" : forwarding_rules,
+    }
+    return render(request, "sms/list_forwarding_rules.html", context)
 
+@login_and_domain_required
+@require_superuser
+def add_forwarding_rule(request, domain, forwarding_rule_id=None):
+    forwarding_rule = None
+    if forwarding_rule_id is not None:
+        forwarding_rule = ForwardingRule.get(forwarding_rule_id)
+        if forwarding_rule.domain != domain:
+            raise Http404
+    
+    if request.method == "POST":
+        form = ForwardingRuleForm(request.POST)
+        if form.is_valid():
+            if forwarding_rule is None:
+                forwarding_rule = ForwardingRule(domain=domain)
+            forwarding_rule.forward_type = form.cleaned_data.get("forward_type")
+            forwarding_rule.keyword = form.cleaned_data.get("keyword")
+            forwarding_rule.backend_id = form.cleaned_data.get("backend_id")
+            forwarding_rule.save()
+            return HttpResponseRedirect(reverse('list_forwarding_rules', args=[domain]))
+    else:
+        initial = {}
+        if forwarding_rule is not None:
+            initial["forward_type"] = forwarding_rule.forward_type
+            initial["keyword"] = forwarding_rule.keyword
+            initial["backend_id"] = forwarding_rule.backend_id
+        form = ForwardingRuleForm(initial=initial)
+    
+    context = {
+        "domain" : domain,
+        "form" : form,
+        "forwarding_rule_id" : forwarding_rule_id,
+    }
+    return render(request, "sms/add_forwarding_rule.html", context)
 
+@login_and_domain_required
+@require_superuser
+def delete_forwarding_rule(request, domain, forwarding_rule_id):
+    forwarding_rule = ForwardingRule.get(forwarding_rule_id)
+    if forwarding_rule.domain != domain:
+        raise Http404
+    forwarding_rule.retire()
+    return HttpResponseRedirect(reverse("list_forwarding_rules", args=[domain]))
 

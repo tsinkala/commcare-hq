@@ -1,35 +1,23 @@
 import copy
 from datetime import datetime
 import json
-import logging
 from urllib import urlencode
 from django.contrib.auth.decorators import login_required
 from django.core.urlresolvers import reverse
 from django.http import Http404, HttpResponseRedirect, HttpResponse
 from django.template.loader import render_to_string
-from restkit.errors import RequestFailed
+from django.shortcuts import render
+
 from corehq.apps.appstore.forms import AddReviewForm
 from corehq.apps.appstore.models import Review
-from corehq.apps.domain.decorators import login_and_domain_required, require_superuser
-from corehq.apps.hqmedia.utils import most_restrictive
-from corehq.apps.registration.forms import DomainRegistrationForm
-from corehq.apps.users.models import Permissions, CouchUser
+from corehq.apps.domain.decorators import require_superuser
+from corehq.apps.users.models import CouchUser
 from corehq.elastic import get_es
-from dimagi.utils.logging import notify_exception
-from dimagi.utils.web import render_to_response, json_response, get_url_base
-from corehq.apps.orgs.models import Organization
-from corehq.apps.domain.models import Domain, LICENSES
-from dimagi.utils.couch.database import get_db
+from corehq.apps.domain.models import Domain
 from django.contrib import messages
-from django.conf import settings
-from corehq.apps.reports.views import datespan_default
-from corehq.apps.hqmedia import utils
-from corehq.apps.app_manager.models import Application
-from django.shortcuts import redirect
 from django.utils.translation import ugettext as _
-import rawes
+from dimagi.utils.couch.database import apply_update
 
-PER_PAGE = 9
 SNAPSHOT_FACETS = ['project_type', 'license', 'region', 'author']
 DEPLOYMENT_FACETS = ['deployment.region']
 SNAPSHOT_MAPPING = {'category':'project_type', 'license': 'license', 'region': 'region', 'author': 'author'}
@@ -55,7 +43,6 @@ def project_info(request, domain, template="appstore/project_info.html"):
         raise Http404()
 
     if request.method == "POST" and dom.copied_from.name not in request.couch_user.get_domains():
-        versioned = True
         form = AddReviewForm(request.POST)
         if form.is_valid():
             title = form.cleaned_data['review_title']
@@ -84,6 +71,8 @@ def project_info(request, domain, template="appstore/project_info.html"):
     else:
         form = AddReviewForm()
 
+    copies = dom.copies_of_parent()
+
     reviews = Review.get_by_app(dom.copied_from._id)
     average_rating = Review.get_average_rating_by_app(dom.copied_from._id)
     num_ratings = Review.get_num_ratings_by_app(dom.copied_from._id)
@@ -93,25 +82,20 @@ def project_info(request, domain, template="appstore/project_info.html"):
 
     images = set()
     audio = set()
-#    for app in dom.applications():
-#        if app.doc_type == 'Application':
-#            app = Application.get(app._id)
-#            sorted_images, sorted_audio, has_error = utils.get_sorted_multimedia_refs(app)
-#            images.update(i['url'] for i in app.get_template_map(sorted_images)[0] if i['url'])
-#            audio.update(a['url'] for a in app.get_template_map(sorted_audio)[0] if a['url'])
 
     # get facets
     results = es_snapshot_query({}, SNAPSHOT_FACETS)
     facets_sortables = generate_sortables_from_facets(results, {}, inverse_dict(SNAPSHOT_MAPPING))
 
     pb_id = dom.cda.user_id
-    published_by = CouchUser.get_by_user_id(pb_id) if pb_id else None
+    published_by = CouchUser.get_by_user_id(pb_id) if pb_id else {"full_name": "*Publisher's name*"}
 
-    return render_to_response(request, template, {
+    return render(request, template, {
         "project": dom,
         "applications": dom.full_applications(include_builds=False),
         "form": form,
         "published_by": published_by,
+        "copies": copies,
         "reviews": reviews,
         "average_rating": average_rating,
         "num_ratings": num_ratings,
@@ -122,7 +106,7 @@ def project_info(request, domain, template="appstore/project_info.html"):
         'display_import': True if getattr(request, "couch_user", "") and request.couch_user.get_domains() else False
     })
 
-def parse_args_for_es(request):
+def parse_args_for_es(request, prefix=None):
     """
     Parses a request's query string for url parameters. It specifically parses the facet url parameter so that each term
     is counted as a separate facet. e.g. 'facets=region author category' -> facets = ['region', 'author', 'category']
@@ -133,27 +117,44 @@ def parse_args_for_es(request):
         if attr[0] == 'facets':
             facets = attr[1][0].split()
             continue
-#        params[attr[0]] = attr[1][0] if len(attr[1]) < 2 else attr[1]
-        params[attr[0]] = attr[1]
+
+        if prefix:
+            if attr[0].startswith(prefix):
+                params[attr[0][len(prefix):]] = attr[1]
+        else:
+            params[attr[0]] = attr[1]
+
     return params, facets
 
-def generate_sortables_from_facets(results, params=None, mapping={}):
+def generate_sortables_from_facets(results, params=None, mapping=None, prefix=''):
     """
     Sortable is a list of tuples containing the field name (e.g. Category) and a list of dictionaries for each facet
     under that field (e.g. HIV and MCH are under Category). Each facet's dict contains the query string, display name,
     count and active-status for each facet.
     """
+    mapping = mapping or {}
     params = dict([(mapping.get(p, p), params[p]) for p in params])
     def generate_query_string(attr, val):
-        updated_params = copy.deepcopy(params)
+        if prefix:
+            attr = prefix + attr
+            updated_params = {}
+            for k, v in params.iteritems():
+                updated_params[prefix + k] = v[:] if isinstance(v, list) else v
+        else:
+            updated_params = copy.deepcopy(params)
+
         updated_params[attr] = updated_params.get(attr, [])
-        if val in params.get(attr, []):
+        if val in updated_params.get(attr, []):
             updated_params[attr].remove(val)
         else:
             updated_params[attr].append(val)
+
         return "?%s" % urlencode(updated_params, True)
 
     def generate_facet_dict(f_name, ft):
+        if isinstance(ft['term'], unicode): #hack to get around unicode encoding issues. However it breaks this specific facet
+            ft['term'] = ft['term'].encode('ascii','replace')
+
         ccs = {
             'cc': 'CC BY',
             'cc-sa': 'CC BY-SA',
@@ -166,7 +167,7 @@ def generate_sortables_from_facets(results, params=None, mapping={}):
         return {'url': generate_query_string(f_name, ft["term"]),
                 'name': ft["term"] if not license else ccs.get(ft["term"]),
                 'count': ft["count"],
-                'active': ft["term"] in params.get(f_name, "")}
+                'active': str(ft["term"]) in params.get(f_name, "")}
 
     sortable = []
     for facet in results.get("facets", []):
@@ -190,7 +191,9 @@ def appstore(request, template="appstore/appstore_base.html"):
     sort_by = request.GET.get('sort_by', None)
     if sort_by == 'best':
         d_results = Domain.popular_sort(d_results)
-    elif sort_by == 'hits':
+    elif sort_by == 'newest':
+        pass
+    else:
         d_results = Domain.hit_sort(d_results)
 
     average_ratings = list()
@@ -211,7 +214,7 @@ def appstore(request, template="appstore/appstore_base.html"):
         sortables=facets_sortables,
         query_str=request.META['QUERY_STRING'],
         search_query = params.get('search', [""])[0])
-    return render_to_response(request, template, vals)
+    return render(request, template, vals)
 
 def appstore_api(request):
     params, facets = parse_args_for_es(request)
@@ -219,18 +222,30 @@ def appstore_api(request):
     results = es_snapshot_query(params, facets)
     return HttpResponse(json.dumps(results), mimetype="application/json")
 
-def es_query(params, facets=None, terms=None, q=None):
+def es_query(params=None, facets=None, terms=None, q=None, es_url=None, start_at=None, size=None, dict_only=False):
     if terms is None:
         terms = []
     if q is None:
         q = {}
+    if params is None:
+        params = {}
 
-    q["size"] = 9999
+    q["size"] = size or 9999
+    q["from"] = start_at or 0
     q["filter"] = q.get("filter", {})
     q["filter"]["and"] = q["filter"].get("and", [])
+
+    def convert(param):
+        #todo: find a better way to handle bools, something that won't break fields that may be 'T' or 'F' but not bool
+        if param == 'T' or param is True:
+            return 1
+        elif param == 'F' or param is False:
+            return 0
+        return param.lower()
+
     for attr in params:
         if attr not in terms:
-            attr_val = [params[attr].lower()] if isinstance(params[attr], basestring) else [p.lower() for p in params[attr]]
+            attr_val = [convert(params[attr])] if not isinstance(params[attr], list) else [convert(p) for p in params[attr]]
             q["filter"]["and"].append({"terms": {attr: attr_val}})
 
     def facet_filter(facet):
@@ -247,9 +262,14 @@ def es_query(params, facets=None, terms=None, q=None):
     if not q['filter']['and']:
         del q["filter"]
 
-    es_url = "cc_exchange/domain/_search"
+    if dict_only:
+        return q
+
+    es_url = es_url or "cc_exchange/domain/_search"
+
     es = get_es()
     ret_data = es.get(es_url, data=q)
+
     return ret_data
 
 def es_snapshot_query(params, facets=None, terms=None, sort_by="snapshot_time"):
@@ -290,7 +310,6 @@ def approve_app(request, domain):
     elif request.GET.get('approve') == 'false':
         domain.is_approved = False
         domain.save()
-    meta = request.META
     return HttpResponseRedirect(request.META.get('HTTP_REFERER') or reverse('appstore'))
 
 @login_required
@@ -320,7 +339,7 @@ def import_app(request, domain):
         messages.success(request, render_to_string("appstore/partials/view_wiki.html", {"pre": _("Application successfully imported!")}), extra_tags="html")
         return HttpResponseRedirect(reverse('view_app', args=[to_project_name, new_doc.id]))
     else:
-        return project_info(request, domain)
+        return HttpResponseRedirect(reverse('project_info', args=[domain]))
 
 @login_required
 def copy_snapshot(request, domain):
@@ -331,6 +350,7 @@ def copy_snapshot(request, domain):
 
     dom = Domain.get_by_name(domain)
     if request.method == "POST" and dom.is_snapshot:
+        from corehq.apps.registration.forms import DomainRegistrationForm
         args = {'domain_name': request.POST['new_project_name'], 'eula_confirmed': True}
         form = DomainRegistrationForm(args)
 
@@ -348,15 +368,19 @@ def copy_snapshot(request, domain):
             if new_domain is None:
                 messages.error(request, _("A project by that name already exists"))
                 return project_info(request, domain)
-            dom.downloads += 1
-            dom.save()
+
+            def inc_downloads(d):
+                d.downloads += 1
+
+            apply_update(dom, inc_downloads)
             messages.success(request, render_to_string("appstore/partials/view_wiki.html", {"pre": _("Project copied successfully!")}), extra_tags="html")
             return HttpResponseRedirect(reverse('view_app',
                 args=[new_domain.name, new_domain.full_applications()[0].get_id]))
         else:
             messages.error(request, _("You must specify a name for the new project"))
             return project_info(request, domain)
-
+    else:
+        return HttpResponseRedirect(reverse('project_info', args=[domain]))
 
 def project_image(request, domain):
     project = Domain.get_by_name(domain)
@@ -376,7 +400,7 @@ def deployment_info(request, domain, template="appstore/deployment_info.html"):
     results = es_deployments_query({}, DEPLOYMENT_FACETS)
     facets_sortables = generate_sortables_from_facets(results, {}, inverse_dict(DEPLOYMENT_MAPPING))
 
-    return render_to_response(request, template, {'domain': dom,
+    return render(request, template, {'domain': dom,
                                                   'search_url': reverse('deployments'),
                                                   'url_base': reverse('deployments'),
                                                   'sortables': facets_sortables})
@@ -403,7 +427,7 @@ def deployments(request, template="appstore/deployments.html"):
              'query_str': request.META['QUERY_STRING'],
              'search_url': reverse('deployments'),
              'search_query': params.get('search', [""])[0]}
-    return render_to_response(request, template, vals)
+    return render(request, template, vals)
 
 def deployments_api(request):
     params, facets = parse_args_for_es(request)
@@ -437,7 +461,7 @@ def media_files(request, domain, template="appstore/media_files.html"):
     if not can_view_app(request, dom):
         raise Http404()
 
-    return render_to_response(request, template, {
+    return render(request, template, {
         "project": dom,
         "url_base": reverse('appstore')
     })

@@ -21,10 +21,6 @@
                 saveUrl: '{% url add_report_config domain %}',
             });
 
-            if ($("#reportFilters").hasClass('in')) {
-                $("#reportFilters").css('overflow', 'visible');
-            }
-
             /* Toggle #reportFilters overflow visibility depending on whether
               it's collapsed or not.  Storing the modal ID is a hack to get
               around unwanted interaction between bootstrap and knockout. */
@@ -50,16 +46,6 @@
     </script>
 {% endblock %}
 
-{% block subsection-navigation %}
-<nav class="hq-subsection-navbar">
-    <ul class="nav">
-        <li {% ifequal report.app_slug 'reports' %}class="active"{% endifequal %}><a href="{% url reports_home domain %}">{% trans  "Project Reports" %}</a> <div class="arrow"></div></li>
-        <li {% ifequal report.app_slug 'adm' %}class="active"{% endifequal %}><a href="{% url default_adm_report domain %}">{% trans  "Active Data Management" %}</a> <div class="arrow"></div></li>
-    </ul>
-</nav>
-{% endblock %}
-
-{% block sidebar %}{% include "reports/partials/report_list.html" %}{% endblock %}
 {% block report_filter_actions %}
 <div id="savedReports">
     <div class="btn-toolbar">

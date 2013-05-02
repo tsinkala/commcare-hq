@@ -149,7 +149,7 @@
     {% include "reports/partials/saved_custom_exports.html" with allow_edit="yes" %}
 {% else %}
     <div class="alert alert-info">
-        <strong>{% trans "No Custom Exports yet!" %}</strong>{% trans 'Click "Create Custom Export" on a form below to make one.' %}
+        <strong>{% trans "No Custom Exports yet!" %}</strong> {% trans 'Click "Create Custom Export" on a form below to make one.' %}
     </div>
 {% endif %}
 </section>
@@ -212,9 +212,7 @@
                     {% endifchanged %}
                 </td>
                 <td>
-                {% if form.show_xmlns %}<code>{% endif %}
-                {% include "reports/partials/form_name.html" %}
-                {% if form.show_xmlns %}</code>{% endif %}
+                {% include "reports/partials/form_name.html" with html='yes' %}
                 {% if form.app_copy %}
                     <span class="label label-info">{% trans "Mislabeled" %}</span>
                     {% if request.couch_user.can_edit_data %}

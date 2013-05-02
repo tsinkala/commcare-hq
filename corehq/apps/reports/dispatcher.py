@@ -1,15 +1,13 @@
-import datetime
-from django.conf import settings
 from django.core.urlresolvers import reverse
-from django.http import HttpResponseNotFound, Http404, HttpResponseRedirect
+from django.http import Http404, HttpResponseRedirect
 from django.template.loader import render_to_string
 from django.utils.safestring import mark_safe
 from django.views.generic.base import View
-from corehq.apps.domain.decorators import login_and_domain_required, cls_login_and_domain_required, cls_to_view
+from corehq.apps.domain.decorators import login_and_domain_required, cls_to_view
 from dimagi.utils.decorators.datespan import datespan_in_request
-from dimagi.utils.modules import to_function
-from django.utils.html import escape
 from django.utils.translation import ugettext as _
+
+from corehq.apps.domain.models import Domain
 
 datespan_default = datespan_in_request(
     from_param="startdate",
@@ -42,16 +40,9 @@ class ReportDispatcher(View):
     map_name = None
 
     def __init__(self, **kwargs):
-        map_name = kwargs.get('map_name')
-        if map_name:
-            self.map_name = map_name
-        if not self.map_name or not isinstance(self.map_name, str): # unicode?
+        if not self.map_name or not isinstance(self.map_name, basestring): # unicode?
             raise NotImplementedError("Class property 'map_name' must be a string, and not empty.")
         super(ReportDispatcher, self).__init__(**kwargs)
-
-    @property
-    def report_map(self):
-        return getattr(settings, self.map_name, None)
 
     @property
     def slug_aliases(self):
@@ -62,9 +53,6 @@ class ReportDispatcher(View):
         """
         return {}
 
-    def validate_report_map(self, request):
-        return bool(isinstance(self.report_map, dict) and self.report_map)
-
     def permissions_check(self, report, request, domain=None):
         """
             Override this method to check for appropriate permissions based on the report model
@@ -73,31 +61,23 @@ class ReportDispatcher(View):
         return True
 
     def get_reports(self, domain=None):
-        """
-            Override this method as necessary for specially constructed report maps.
-            For instance, custom reports are structured like:
-            CUSTOM_REPORT_MAP = {
-                "domain" : {
-                    "Reporting Section Name": ['path.to.custom.report.ReportClass']
-                }
-            }
-        """
-        return self.report_map
+        attr_name = self.map_name
+        import corehq
+        return getattr(corehq, attr_name, ()) + \
+               getattr(Domain.get_module_by_name(domain), attr_name, ())
 
+    def get_reports_dict(self, domain=None):
+        return dict((report.slug, report)
+                    for name, group in self.get_reports(domain)
+                    for report in group)
 
     def get_report(self, domain, report_slug):
         """
-        Returns the report class for a configured slug, or None if no
-        report is found.
-        """
-        reports = self.get_reports(domain)
-        for key, report_model_paths in reports.items():
-            for model_path in report_model_paths:
-                report_class = to_function(model_path)
-                if report_class.slug == report_slug:
-                    return report_class
+        Returns the report class for `report_slug`, or None if no report is
+        found.
 
-        return None
+        """
+        return self.get_reports_dict(domain).get(report_slug, None)
 
     def _redirect_slug(self, slug):
         return self.slug_aliases.get(slug) is not None
@@ -105,15 +85,12 @@ class ReportDispatcher(View):
     def _slug_alias(self, slug):
         return self.slug_aliases.get(slug)
 
-    def dispatch(self, request, *args, **kwargs):
-        if not self.validate_report_map(request):
-            return HttpResponseNotFound("Sorry, no reports have been configured yet.")
+    def dispatch(self, request, domain=None, report_slug=None, render_as=None,
+                 *args, **kwargs):
+        render_as = render_as or 'view'
+        domain = domain or getattr(request, 'domain', None)
 
-        current_slug = kwargs.get('report_slug')
-        render_as = kwargs.get('render_as') or 'view'
-        domain = kwargs.get('domain') or getattr(request, 'domain', None)
-
-        redirect_slug = self._redirect_slug(current_slug)
+        redirect_slug = self._redirect_slug(report_slug)
 
         if redirect_slug and render_as == 'email':
             # todo saved reports should probably change the slug to the redirected slug. this seems like a hack.
@@ -127,22 +104,15 @@ class ReportDispatcher(View):
 
         report_kwargs = kwargs.copy()
 
-        if domain:
-            del report_kwargs['domain']
-        del report_kwargs['report_slug']
-        del report_kwargs['render_as']
+        cls = self.get_report(domain, report_slug)
+        class_name = cls.__module__ + '.' + cls.__name__ if cls else ''
 
-        reports = self.get_reports(domain)
-
-        for key, report_model_paths in reports.items():
-            for model_path in report_model_paths:
-                report_class = to_function(model_path)
-                if report_class.slug == current_slug:
-                    report = report_class(request, domain=domain, **report_kwargs)
-                    report.rendered_as = render_as
-                    if self.permissions_check(model_path, request, domain=domain):
-                        return getattr(report, '%s_response' % render_as)
-        raise Http404
+        if cls and self.permissions_check(class_name, request, domain=domain):
+            report = cls(request, domain=domain, **report_kwargs)
+            report.rendered_as = render_as
+            return getattr(report, '%s_response' % render_as)
+        else:
+            raise Http404()
 
     @classmethod
     def name(cls):
@@ -161,45 +131,44 @@ class ReportDispatcher(View):
 
     @classmethod
     def allowed_renderings(cls):
-        return ['json', 'async', 'filters', 'export', 'mobile', 'email', 'clear_cache', 'partial']
+        return ['json', 'async', 'filters', 'export', 'mobile', 'email', 'partial']
 
     @classmethod
-    def report_navigation_list(cls, context):
+    def navigation_sections(cls, context):
         request = context.get('request')
         domain = context.get('domain') or getattr(request, 'domain', None)
-
+        project = getattr(request, 'project', None)
+        couch_user = getattr(request, 'couch_user', None)
+        
         nav_context = []
-        dispatcher = cls()
+
+        dispatcher = cls()  # uhoh
         current_slug = context.get('report',{}).get('slug','')
 
         reports = dispatcher.get_reports(domain)
-        for key, models in reports.items():
-            section = []
-            for model in models:
-                if not dispatcher.permissions_check(model, request, domain=domain):
+        for section_name, report_group in reports:
+            report_contexts = []
+            for report in report_group:
+                class_name = report.__module__ + '.' + report.__name__
+                if not dispatcher.permissions_check(class_name, request, domain=domain):
                     continue
-                report = to_function(model, failhard=True)
-                if report.show_in_navigation(request, domain=domain):
+                if report.show_in_navigation(
+                        domain=domain, project=project, user=couch_user):
                     if hasattr(report, 'override_navigation_list'):
-                        section.extend(report.override_navigation_list(context))
+                        report_contexts.extend(report.override_navigation_list(context))
                     else:
-                        selected_report = bool(report.slug == current_slug)
-                        section.append({
-                            'is_report': True,
-                            'is_active': selected_report,
+                        report_contexts.append({
+                            'is_active': report.slug == current_slug,
                             'url': report.get_url(domain=domain),
                             'description': report.description,
                             'icon': report.icon,
                             'title': report.name,
                         })
-            if section:
-                nav_context.append({
-                    'header': _(key),
-                })
-                nav_context.extend(section)
-        return mark_safe(render_to_string("reports/standard/partials/navigation_items.html", {
-            'navs': nav_context
-        }))
+            if report_contexts:
+                if hasattr(section_name, '__call__'):
+                    section_name = section_name(project, couch_user)
+                nav_context.append((section_name, report_contexts))
+        return nav_context
 
     @classmethod
     def url_pattern(cls):
@@ -210,7 +179,7 @@ cls_to_view_login_and_domain = cls_to_view(additional_decorator=login_and_domain
 
 class ProjectReportDispatcher(ReportDispatcher):
     prefix = 'project_report' # string. ex: project, custom, billing, interface, admin
-    map_name = 'PROJECT_REPORT_MAP'
+    map_name = 'REPORTS'
 
     @property
     def slug_aliases(self):
@@ -232,7 +201,12 @@ class ProjectReportDispatcher(ReportDispatcher):
 
 class CustomProjectReportDispatcher(ProjectReportDispatcher):
     prefix = 'custom_project_report'
-    map_name = 'CUSTOM_REPORT_MAP'
+    map_name = 'CUSTOM_REPORTS'
 
-    def get_reports(self, domain):
-        return self.report_map.get(domain, {})
+class BasicReportDispatcher(ReportDispatcher):
+    prefix = 'basic_report'
+    map_name = 'BASIC_REPORTS'
+
+class AdminReportDispatcher(ReportDispatcher):
+    prefix = 'admin_report'
+    map_name = 'ADMIN_REPORTS'

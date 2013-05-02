@@ -10,6 +10,8 @@ from django.core.urlresolvers import reverse
 from corehq.apps.domain.models import Domain
 from corehq.apps.users.models import WebUser, CouchUser
 from dimagi.utils.django.email import send_HTML_email
+from dimagi.utils.couch.database import get_safe_write_kwargs
+
 
 def activate_new_user(form, is_domain_admin=True, domain=None, ip=None):
     username = form.cleaned_data['email']
@@ -36,9 +38,11 @@ def activate_new_user(form, is_domain_admin=True, domain=None, ip=None):
 
     return new_user
 
-def request_new_domain(request, form, org, new_user=True):
+def request_new_domain(request, form, org, domain_type=None, new_user=True):
     now = datetime.utcnow()
     current_user = CouchUser.from_django_user(request.user)
+
+    commtrack_enabled = domain_type == 'commtrack'
 
     dom_req = RegistrationRequest()
     if new_user:
@@ -48,16 +52,20 @@ def request_new_domain(request, form, org, new_user=True):
 
     new_domain = Domain(name=form.cleaned_data['domain_name'],
         is_active=False,
-        date_created=datetime.utcnow())
-
+        date_created=datetime.utcnow(),
+        commtrack_enabled=commtrack_enabled,
+        creating_user=current_user.username)
 
     if org:
         new_domain.organization = org
+        new_domain.hr_name = request.POST.get('domain_hrname', None) or new_domain.name
 
     if not new_user:
         new_domain.is_active = True
 
-    new_domain.save()
+    # ensure no duplicate domain documents get created on cloudant
+    new_domain.save(**get_safe_write_kwargs())
+
     if not new_domain.name:
         new_domain.name = new_domain._id
         new_domain.save() # we need to get the name from the _id
@@ -172,7 +180,7 @@ The CommCareHQ Team
 <p>Hello {name},</p>
 <p>You may now  <a href="{domain_link}">visit your newly created project</a> with the CommCare HQ User <strong>{username}</strong>.</p>
 
-<p>Please remember, if you need help you can visit the <a href="{wiki_link}">CommCare Wiki</a>, the home of all CommCare documentation.</p>
+<p>Please remember, if you need help you can visit the <a href="{wiki_link}">CommCare Help Site</a>, the home of all CommCare documentation.</p>
 <p>We also encourage you to join the <a href="{users_link}">commcare-users google group</a>, where CommCare users from all over the world ask each other questions and share information over the commcare-users mailing list.</p>
 <p>If you encounter any technical problems while using CommCareHQ, look for a "Report an Issue" link at the bottom of every page.  Our developers will look into the problem and communicate with you about a solution.</p>
 <p style="margin-top:1em">Thank you,</p>

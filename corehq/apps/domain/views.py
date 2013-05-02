@@ -1,5 +1,6 @@
 import datetime
 import logging
+from couchdbkit import ResourceNotFound
 import dateutil
 from django.conf import settings
 from django.contrib.sites.models import Site
@@ -8,16 +9,22 @@ from corehq.apps import receiverwrapper
 from django.core.urlresolvers import reverse
 from django.http import HttpResponseRedirect, HttpResponse, Http404
 
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
+from corehq.apps.domain.calculations import CALCS, CALC_FNS, CALC_ORDER, dom_calc
 
-from corehq.apps.domain.decorators import login_required_late_eval_of_LOGIN_URL, domain_admin_required
+from corehq.apps.domain.decorators import (domain_admin_required,
+    login_required_late_eval_of_LOGIN_URL, require_superuser,
+    login_and_domain_required)
 from corehq.apps.domain.forms import DomainGlobalSettingsForm,\
-    DomainMetadataForm, SnapshotSettingsForm, SnapshotApplicationForm, DomainDeploymentForm
+    DomainMetadataForm, SnapshotSettingsForm, SnapshotApplicationForm, DomainDeploymentForm, DomainInternalForm
 from corehq.apps.domain.models import Domain, LICENSES
 from corehq.apps.domain.utils import get_domained_url, normalize_domain_name
+from corehq.apps.orgs.models import Organization, OrgRequest, Team
+from corehq.apps.commtrack.util import all_sms_codes
+from dimagi.utils.decorators.memoized import memoized
 from dimagi.utils.django.email import send_HTML_email
 
-from dimagi.utils.web import render_to_response, get_ip
+from dimagi.utils.web import get_ip, json_response
 from corehq.apps.users.views import require_can_edit_web_users
 from corehq.apps.receiverwrapper.forms import FormRepeaterForm
 from corehq.apps.receiverwrapper.models import FormRepeater, CaseRepeater, ShortFormRepeater
@@ -30,6 +37,26 @@ from PIL import Image
 from django.utils.translation import ugettext as _
 
 
+class DomainViewMixin(object):
+    """
+        Paving the way for a world of entirely class-based views.
+        Let's do this, guys. :-)
+    """
+
+    @property
+    @memoized
+    def domain(self):
+        return self.args[0] if len(self.args) > 0 else ""
+
+    @property
+    @memoized
+    def domain_object(self):
+        try:
+            return Domain.get_by_name(self.domain)
+        except ResourceNotFound:
+            raise Http404
+
+
 # Domain not required here - we could be selecting it for the first time. See notes domain.decorators
 # about why we need this custom login_required decorator
 @login_required_late_eval_of_LOGIN_URL
@@ -39,7 +66,7 @@ def select(request, domain_select_template='domain/select.html'):
     if not domains_for_user:
         return redirect('registration_domain')
 
-    return render_to_response(request, domain_select_template, {})
+    return render(request, domain_select_template, {})
 
 
 @require_can_edit_web_users
@@ -47,7 +74,7 @@ def domain_forwarding(request, domain):
     form_repeaters = FormRepeater.by_domain(domain)
     case_repeaters = CaseRepeater.by_domain(domain)
     short_form_repeaters = ShortFormRepeater.by_domain(domain)
-    return render_to_response(request, "domain/admin/domain_forwarding.html", {
+    return render(request, "domain/admin/domain_forwarding.html", {
         "domain": domain,
         "repeaters": (
             ("FormRepeater", form_repeaters),
@@ -108,7 +135,7 @@ def add_repeater(request, domain, repeater_type):
             return HttpResponseRedirect(reverse("corehq.apps.domain.views.domain_forwarding", args=[domain]))
     else:
         form = FormRepeaterForm()
-    return render_to_response(request, "domain/admin/add_form_repeater.html", {
+    return render(request, "domain/admin/add_form_repeater.html", {
         "domain": domain,
         "form": form,
         "repeater_type": repeater_type,
@@ -120,9 +147,6 @@ def legacy_domain_name(request, domain, path):
 
 @domain_admin_required
 def project_settings(request, domain, template="domain/admin/project_settings.html"):
-    class _NeverFailForm(object):
-            def is_valid(self):              return True
-            def save(self, request, domain): return True
     domain = Domain.get_by_name(domain)
     user_sees_meta = request.couch_user.is_previewer()
 
@@ -131,7 +155,7 @@ def project_settings(request, domain, template="domain/admin/project_settings.ht
        'deployment_info_form' not in request.POST:
         # deal with saving the settings data
         if user_sees_meta:
-            form = DomainMetadataForm(request.POST)
+            form = DomainMetadataForm(request.POST, user=request.couch_user, domain=domain.name)
         else:
             form = DomainGlobalSettingsForm(request.POST)
         if form.is_valid():
@@ -141,19 +165,25 @@ def project_settings(request, domain, template="domain/admin/project_settings.ht
                 messages.error(request, "There seems to have been an error saving your settings. Please try again!")
     else:
         if user_sees_meta:
-            form = DomainMetadataForm(initial={
+            form = DomainMetadataForm(user=request.couch_user, domain=domain.name, initial={
                 'default_timezone': domain.default_timezone,
                 'case_sharing': json.dumps(domain.case_sharing),
                 'project_type': domain.project_type,
                 'customer_type': domain.customer_type,
                 'is_test': json.dumps(domain.is_test),
-                'survey_management_enabled' : domain.survey_management_enabled,
+                'survey_management_enabled': domain.survey_management_enabled,
+                'sms_case_registration_enabled': domain.sms_case_registration_enabled,
+                'sms_case_registration_type': domain.sms_case_registration_type,
+                'sms_case_registration_owner_id': domain.sms_case_registration_owner_id,
+                'sms_case_registration_user_id': domain.sms_case_registration_user_id,
+                'default_sms_backend_id': domain.default_sms_backend_id,
+                'commtrack_enabled': domain.commtrack_enabled,
             })
         else:
             form = DomainGlobalSettingsForm(initial={
                 'default_timezone': domain.default_timezone,
                 'case_sharing': json.dumps(domain.case_sharing)
-                })
+            })
 
     if request.method == 'POST' and 'deployment_info_form' in request.POST:
         deployment_form = DomainDeploymentForm(request.POST)
@@ -191,13 +221,16 @@ def project_settings(request, domain, template="domain/admin/project_settings.ht
         billing_info_form = None
         billing_info_partial = None
 
-
-    return render_to_response(request, template, dict(
+    return render(request, template, dict(
         domain=domain.name,
         form=form,
         deployment_form=deployment_form,
         languages=domain.readable_languages(),
         applications=domain.applications(),
+        commtrack_enabled=domain.commtrack_enabled,  # ideally the template gets access to the domain doc through
+            # some other means. otherwise it has to be supplied to every view reachable in that sidebar (every
+            # view whose template extends users_base.html); mike says he's refactoring all of this imminently, so
+            # i will not worry about it until he is done
         autocomplete_fields=('project_type', 'phone_model', 'user_type', 'city', 'country', 'region'),
         billing_info_form=billing_info_form,
         billing_info_partial=billing_info_partial,
@@ -211,15 +244,107 @@ def autocomplete_fields(request, field):
 
 @domain_admin_required
 def snapshot_settings(request, domain):
-    domain = Domain.get_by_name(domain)
+    domain = Domain.get_by_name(domain, strict=True)
     snapshots = domain.snapshots()
-    return render_to_response(request, 'domain/snapshot_settings.html',
+    return render(request, 'domain/snapshot_settings.html',
                 {"project": domain, 'domain': domain.name, 'snapshots': list(snapshots), 'published_snapshot': domain.published_snapshot()})
 
 @domain_admin_required
-def create_snapshot(request, domain):
+def org_settings(request, domain):
     domain = Domain.get_by_name(domain)
-    #latest_applications = [app.get_latest_saved() or app for app in domain.applications()]
+
+    org_users = []
+    teams = Team.get_by_domain(domain.name)
+    for team in teams:
+        for user in team.get_members():
+            user.team_id = team.get_id
+            user.team = team.name
+            org_users.append(user)
+
+    for user in org_users:
+        user.current_domain = domain.name
+
+    all_orgs = Organization.get_all()
+
+    return render(request, 'domain/orgs_settings.html', {
+        "project": domain, 'domain': domain.name,
+        "organization": Organization.get_by_name(getattr(domain, "organization", None)),
+        "org_users": org_users,
+        "all_orgs": all_orgs,
+    })
+
+@login_and_domain_required
+@require_superuser
+def internal_settings(request, domain, template='domain/internal_settings.html'):
+    domain = Domain.get_by_name(domain)
+
+    if request.method == 'POST':
+        internal_form = DomainInternalForm(request.POST)
+        if internal_form.is_valid():
+            internal_form.save(domain)
+            messages.success(request, "The internal information for project %s was successfully updated!" % domain.name)
+        else:
+            messages.error(request, "There seems to have been an error. Please try again!")
+    else:
+        internal_form = DomainInternalForm(initial={
+            "sf_contract_id": domain.internal.sf_contract_id,
+            "sf_account_id": domain.internal.sf_account_id,
+            "commcare_edition": domain.internal.commcare_edition,
+            "services": domain.internal.services,
+            "initiative": domain.internal.initiative,
+            "project_state": domain.internal.project_state,
+            "self_started": 'true' if domain.internal.self_started else 'false',
+            "area": domain.internal.area,
+            "sub_area": domain.internal.sub_area,
+            "using_adm": 'true' if domain.internal.using_adm else 'false',
+            "using_call_center": 'true' if domain.internal.using_call_center else 'false',
+            "custom_eula": 'true' if domain.internal.custom_eula else 'false',
+            "can_use_data": 'true' if domain.internal.can_use_data else 'false',
+            "organization_name": domain.internal.organization_name,
+            "notes": domain.internal.notes,
+        })
+
+    return render(request, template, {"project": domain, "domain": domain.name, "form": internal_form, 'active': 'settings'})
+
+@login_and_domain_required
+@require_superuser
+def internal_calculations(request, domain, template="domain/internal_calculations.html"):
+    domain = Domain.get_by_name(domain)
+    return render(request, template, {"project": domain, "domain": domain.name, "calcs": CALCS, "order": CALC_ORDER, 'active': 'calcs'})
+
+@login_and_domain_required
+@require_superuser
+def calculated_properties(request, domain):
+    calc_tag = request.GET.get("calc_tag", '').split('--')
+    extra_arg = calc_tag[1] if len(calc_tag) > 1 else ''
+    calc_tag = calc_tag[0]
+
+    if not calc_tag or calc_tag not in CALC_FNS.keys():
+        data = {"error": 'This tag does not exist'}
+    else:
+        data = {"value": dom_calc(calc_tag, domain, extra_arg)}
+    return json_response(data)
+
+@domain_admin_required
+def create_snapshot(request, domain):
+    # todo: refactor function into smaller pieces
+    domain = Domain.get_by_name(domain)
+    can_publish_as_org = domain.get_organization() and request.couch_user.is_org_admin(domain.get_organization().name)
+
+    def render_with_ctxt(snapshot=None, error_msg=None):
+        ctxt = {'error_message': error_msg} if error_msg else {}
+        ctxt.update({'domain': domain.name,
+                     'form': form,
+                     'app_forms': app_forms,
+                     'can_publish_as_org': can_publish_as_org,
+                     'autocomplete_fields': ('project_type', 'phone_model', 'user_type', 'city', 'country', 'region')})
+        if snapshot:
+            ctxt.update({'published_as_org': snapshot.publisher == 'organization', 'author': snapshot.author})
+        else:
+            ctxt.update({'published_as_org': request.POST.get('publisher', '') == 'organization',
+                         'author': request.POST.get('author', '')})
+        return render(request, 'domain/create_snapshot.html', ctxt)
+
     if request.method == 'GET':
         form = SnapshotSettingsForm(initial={
                 'default_timezone': domain.default_timezone,
@@ -229,37 +354,39 @@ def create_snapshot(request, domain):
                 'license': domain.license,
                 'publish_on_submit': True,
             })
+
         snapshots = list(domain.snapshots())
         published_snapshot = snapshots[0] if snapshots else domain
         published_apps = {}
         if published_snapshot is not None:
-            form = SnapshotSettingsForm(initial={
+            initial={
                 'default_timezone': published_snapshot.default_timezone,
                 'case_sharing': json.dumps(published_snapshot.case_sharing),
                 'project_type': published_snapshot.project_type,
                 'license': published_snapshot.license,
                 'title': published_snapshot.title,
-                'author': published_snapshot.author,
                 'share_multimedia': published_snapshot.multimedia_included,
                 'description': published_snapshot.description,
                 'short_description': published_snapshot.short_description,
                 'publish_on_submit': True,
-            })
+            }
+            if published_snapshot.yt_id:
+                initial['video'] = 'http://www.youtube.com/watch?v=%s' % published_snapshot.yt_id
+            form = SnapshotSettingsForm(initial=initial)
+
             for app in published_snapshot.full_applications():
-                if domain == published_snapshot:
-                    published_apps[app._id] = app
-                else:
-                    published_apps[app.copied_from._id] = app
+                base_app_id = app.copy_of if domain == published_snapshot else app.copied_from.copy_of
+                published_apps[base_app_id] = app
+
         app_forms = []
         for app in domain.applications():
             app = app.get_latest_saved() or app
-            if published_snapshot and app._id in published_apps:
-                original = published_apps[app._id]
+            if published_snapshot and app.copy_of in published_apps:
+                original = published_apps[app.copy_of]
                 app_forms.append((app, SnapshotApplicationForm(initial={
                     'publish': True,
                     'name': original.name,
                     'description': original.description,
-                    'short_description': original.short_description,
                     'deployment_date': original.deployment_date,
                     'user_type': original.user_type,
                     'attribution_notes': original.attribution_notes,
@@ -268,46 +395,32 @@ def create_snapshot(request, domain):
                 }, prefix=app.id)))
             else:
                 app_forms.append((app, SnapshotApplicationForm(initial={'publish': (published_snapshot is None or published_snapshot == domain)}, prefix=app.id)))
-        return render_to_response(request, 'domain/create_snapshot.html',
-            {'domain': domain.name,
-             'form': form,
-             #'latest_applications': latest_applications,
-             'app_forms': app_forms,
-             'autocomplete_fields': ('project_type', 'phone_model', 'user_type', 'city', 'country', 'region')})
+
+        return render_with_ctxt(snapshot=published_snapshot)
+
     elif request.method == 'POST':
         form = SnapshotSettingsForm(request.POST, request.FILES)
         form.dom = domain
+
         app_forms = []
         publishing_apps = False
         for app in domain.applications():
             app = app.get_latest_saved() or app
             app_forms.append((app, SnapshotApplicationForm(request.POST, prefix=app.id)))
             publishing_apps = publishing_apps or request.POST.get("%s-publish" % app.id, False)
+
         if not publishing_apps:
             messages.error(request, "Cannot publish a project without applications to CommCare Exchange")
-            return render_to_response(request, 'domain/create_snapshot.html',
-                {'domain': domain.name,
-                 'form': form,
-                 'app_forms': app_forms,
-                 'autocomplete_fields': ('project_type', 'phone_model', 'user_type', 'city', 'country', 'region')})
+            return render_with_ctxt()
 
         current_user = request.couch_user
         if not current_user.is_eula_signed():
             messages.error(request, 'You must agree to our eula to publish a project to Exchange')
-            return render_to_response(request, 'domain/create_snapshot.html',
-                {'domain': domain.name,
-                 'form': form,
-                 'app_forms': app_forms,
-                 'autocomplete_fields': ('project_type', 'phone_model', 'user_type', 'city', 'country', 'region')})
+            return render_with_ctxt()
 
         if not form.is_valid():
             messages.error(request, _("There are some problems with your form. Please address these issues and try again."))
-            return render_to_response(request, 'domain/create_snapshot.html',
-                    {'domain': domain.name,
-                     'form': form,
-                     #'latest_applications': latest_applications,
-                     'app_forms': app_forms,
-                     'autocomplete_fields': ('project_type', 'phone_model', 'user_type', 'city', 'country', 'region')})
+            return render_with_ctxt()
 
         new_license = request.POST['license']
         if request.POST.get('share_multimedia', False):
@@ -330,11 +443,15 @@ def create_snapshot(request, domain):
         new_domain.short_description = request.POST['short_description']
         new_domain.project_type = request.POST['project_type']
         new_domain.title = request.POST['title']
-        new_domain.author = request.POST['author']
         new_domain.multimedia_included = request.POST.get('share_multimedia', '') == 'on'
+        new_domain.publisher = request.POST.get('publisher', None) or 'user'
+        if request.POST.get('video'):
+            new_domain.yt_id = form.cleaned_data['video']
+
+        new_domain.author = request.POST.get('author', None)
 
         new_domain.is_approved = False
-        publish_on_submit = request.POST.get('publish_on_submit', False)
+        publish_on_submit = request.POST.get('publish_on_submit', "no") == "yes"
 
         image = form.cleaned_data['image']
         if image:
@@ -365,7 +482,6 @@ def create_snapshot(request, domain):
             if request.POST.get("%s-publish" % original_id, False):
                 application.name = request.POST["%s-name" % original_id]
                 application.description = request.POST["%s-description" % original_id]
-                application.short_description = request.POST["%s-short_description" % original_id]
                 date_picked = request.POST["%s-deployment_date" % original_id]
                 try:
                     date_picked = dateutil.parser.parse(date_picked)
@@ -385,12 +501,7 @@ def create_snapshot(request, domain):
                 application.delete()
 
         if new_domain is None:
-            return render_to_response(request, 'domain/snapshot_settings.html',
-                    {'domain': domain.name,
-                     'form': form,
-                     #'latest_applications': latest_applications,
-                     'app_forms': app_forms,
-                     'error_message': _('Version creation failed; please try again')})
+            return render_with_ctxt(error_message=_('Version creation failed; please try again'))
 
         if publish_on_submit:
             messages.success(request, _("Created a new version of your app. This version will be posted to CommCare Exchange pending approval by admins."))
@@ -466,7 +577,7 @@ def manage_multimedia(request, domain):
             m_file.save()
         messages.success(request, "Multimedia updated successfully!")
 
-    return render_to_response(request, 'domain/admin/media_manager.html', {'domain': domain,
+    return render(request, 'domain/admin/media_manager.html', {'domain': domain,
         'media': [{
             'license': m.license.type if m.license else 'public',
             'shared': domain in m.shared_by,
@@ -476,4 +587,113 @@ def manage_multimedia(request, domain):
             'type': m.doc_type
                    } for m in media],
         'licenses': LICENSES.items()
-                                                                     })
+    })
+
+@domain_admin_required
+def commtrack_settings(request, domain):
+    domain = Domain.get_by_name(domain)
+    settings = domain.commtrack_settings
+
+    if request.POST:
+        from corehq.apps.commtrack.models import CommtrackActionConfig, LocationType
+
+        payload = json.loads(request.POST.get('json'))
+
+        settings.multiaction_keyword = payload['keyword']
+
+        def make_action_name(caption, actions):
+            existing = filter(None, [a.get('name') for a in actions])
+            name = ''.join(c.lower() if c.isalpha() else '_' for c in caption)
+            disambig = 1
+
+            def _name():
+                return name + ('_%s' % disambig if disambig > 1 else '')
+
+            while _name() in existing:
+                disambig += 1
+
+            return _name()
+
+        def mk_action(action):
+            action['action_type'] = action['type']
+            del action['type']
+
+            if not action.get('name'):
+                action['name'] = make_action_name(action['caption'], payload['actions'])
+
+            return CommtrackActionConfig(**action)
+
+        def mk_loctype(loctype):
+            loctype['allowed_parents'] = [p or '' for p in loctype['allowed_parents']]
+            return LocationType(**loctype)
+
+        #TODO add server-side input validation here (currently validated on client)
+
+        settings.actions = [mk_action(a) for a in payload['actions']]
+        settings.location_types = [mk_loctype(l) for l in payload['loc_types']]
+        settings.save()
+
+    def settings_to_json(config):
+        return {
+            'keyword': config.multiaction_keyword,
+            'actions': [action_to_json(a) for a in config.actions],
+            'loc_types': [loctype_to_json(l) for l in config.location_types],
+        }
+    def action_to_json(action):
+        return {
+            'type': action.action_type,
+            'keyword': action.keyword,
+            'name': action.action_name,
+            'caption': action.caption,
+        }
+    def loctype_to_json(loctype):
+        return {
+            'name': loctype.name,
+            'allowed_parents': [p or None for p in loctype.allowed_parents],
+            'administrative': loctype.administrative,
+        }
+
+    def other_sms_codes():
+        for k, v in all_sms_codes(domain.name).iteritems():
+            if v[0] == 'product':
+                yield (k, (v[0], v[1].name))
+
+    return render(request, 'domain/admin/commtrack_settings.html', dict(
+            domain=domain.name,
+            settings=settings_to_json(settings),
+            other_sms_codes=dict(other_sms_codes()),
+        ))
+
+@require_POST
+@domain_admin_required
+def org_request(request, domain):
+    org_name = request.POST.get("org_name", None)
+    org = Organization.get_by_name(org_name)
+    if org:
+        org_request = OrgRequest.get_requests(org_name, domain=domain, user_id=request.couch_user.get_id)
+        if not org_request:
+            org_request = OrgRequest(organization=org_name, domain=domain,
+                requested_by=request.couch_user.get_id, requested_on=datetime.datetime.utcnow())
+            org_request.save()
+            _send_request_notification_email(request, org, domain)
+            messages.success(request,
+                "Your request was submitted. The admin of organization %s can now choose to manage the project %s" %
+                (org_name, domain))
+        else:
+            messages.error(request, "You've already submitted a request to this organization")
+    else:
+        messages.error(request, "The organization '%s' does not exist" % org_name)
+    return HttpResponseRedirect(reverse('domain_org_settings', args=[domain]))
+
+def _send_request_notification_email(request, org, dom):
+    url_base = Site.objects.get_current().domain
+    params = {"org": org, "dom": dom, "requestee": request.couch_user, "url_base": url_base}
+    text_content = render_to_string("domain/email/org_request_notification.txt", params)
+    html_content = render_to_string("domain/email/org_request_notification.html", params)
+    recipients = [member.email for member in org.get_members() if member.is_org_admin(org.name)]
+    subject = "New request to add a project to your organization! -- CommcareHQ"
+    try:
+        for recipient in recipients:
+            send_HTML_email(subject, recipient, html_content, text_content=text_content)
+    except Exception:
+        logging.warning("Can't send notification email, but the message was:\n%s" % text_content)

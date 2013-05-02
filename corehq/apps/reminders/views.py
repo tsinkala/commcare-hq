@@ -1,14 +1,16 @@
 from datetime import timedelta, datetime, time
 import json
+import pytz
 from django.core.urlresolvers import reverse
 from django.http import HttpResponseRedirect, Http404, HttpResponse, HttpResponseBadRequest
-from corehq.apps.reminders.forms import CaseReminderForm, ComplexCaseReminderForm, SurveyForm, SurveySampleForm, EditContactForm
-from corehq.apps.reminders.models import CaseReminderHandler, CaseReminderEvent, REPEAT_SCHEDULE_INDEFINITELY, EVENT_AS_OFFSET, EVENT_AS_SCHEDULE, SurveyKeyword, Survey, SurveySample, SURVEY_METHOD_LIST, SurveyWave, ON_DATETIME, RECIPIENT_SURVEY_SAMPLE
+from django.shortcuts import render
+
+from corehq.apps.reminders.forms import CaseReminderForm, ComplexCaseReminderForm, SurveyForm, SurveySampleForm, EditContactForm, RemindersInErrorForm
+from corehq.apps.reminders.models import CaseReminderHandler, CaseReminderEvent, CaseReminder, REPEAT_SCHEDULE_INDEFINITELY, EVENT_AS_OFFSET, EVENT_AS_SCHEDULE, SurveyKeyword, Survey, SurveySample, SURVEY_METHOD_LIST, SurveyWave, ON_DATETIME, RECIPIENT_SURVEY_SAMPLE, QUESTION_RETRY_CHOICES
 from corehq.apps.users.decorators import require_permission
 from corehq.apps.users.models import CouchUser, CommCareUser, Permissions
-from dimagi.utils.web import render_to_response
 from .models import UI_SIMPLE_FIXED, UI_COMPLEX
-from .util import get_form_list, get_sample_list
+from .util import get_form_list, get_sample_list, get_recipient_name
 from corehq.apps.sms.mixin import VerifiedNumber
 from corehq.apps.sms.util import register_sms_contact, update_contact
 from corehq.apps.domain.models import DomainCounter
@@ -16,6 +18,9 @@ from casexml.apps.case.models import CommCareCase
 from dateutil.parser import parse
 from corehq.apps.sms.util import close_task
 from corehq.apps.groups.models import Group
+from dimagi.utils.timezones import utils as tz_utils
+from corehq.apps.reports import util as report_utils
+from dimagi.utils.couch.database import is_bigcouch, bigcouch_quorum_count
 
 reminders_permission = require_permission(Permissions.edit_data)
 
@@ -26,7 +31,7 @@ def default(request, domain):
 @reminders_permission
 def list_reminders(request, domain, template="reminders/partial/list_reminders.html"):
     handlers = CaseReminderHandler.get_handlers(domain=domain).all()
-    return render_to_response(request, template, {
+    return render(request, template, {
         'domain': domain,
         'reminder_handlers': handlers
     })
@@ -74,7 +79,7 @@ def add_reminder(request, domain, handler_id=None, template="reminders/partial/a
     else:
         reminder_form = CaseReminderForm()
 
-    return render_to_response(request, template, {
+    return render(request, template, {
         'reminder_form': reminder_form,
         'domain': domain
     })
@@ -111,18 +116,7 @@ def scheduled_reminders(request, domain, template="reminders/partial/scheduled_r
     for reminder in reminders:
         handler = reminder.handler
         recipient = reminder.recipient
-        
-        if isinstance(recipient, CouchUser):
-            recipient_desc = "User '" + recipient.raw_username + "'"
-        elif isinstance(recipient, CommCareCase):
-            recipient_desc = "Case '" + recipient.name + "'"
-        elif isinstance(recipient, Group):
-            recipient_desc = "Group '" + recipient.name + "'"
-        elif isinstance(recipient, SurveySample):
-            recipient_desc = "Survey Sample '" + recipient.name + "'"
-        else:
-            recipient_desc = ""
-        
+        recipient_desc = get_recipient_name(recipient)
         case = reminder.case
         
         reminder_data.append({
@@ -134,7 +128,7 @@ def scheduled_reminders(request, domain, template="reminders/partial/scheduled_r
             "case_name" : case.name if case is not None else None,
         })
     
-    return render_to_response(request, template, {
+    return render(request, template, {
         'domain': domain,
         'reminder_data': reminder_data,
         'dates': dates,
@@ -164,6 +158,7 @@ def add_complex_reminder_schedule(request, domain, handler_id=None):
                 if h.start_condition_type != form.cleaned_data["start_condition_type"]:
                     for reminder in h.get_reminders():
                         reminder.retire()
+            h.active = form.cleaned_data["active"]
             h.case_type = form.cleaned_data["case_type"]
             h.nickname = form.cleaned_data["nickname"]
             h.default_lang = form.cleaned_data["default_lang"]
@@ -180,8 +175,10 @@ def add_complex_reminder_schedule(request, domain, handler_id=None):
             h.until = form.cleaned_data["until"]
             h.events = form.cleaned_data["events"]
             h.submit_partial_forms = form.cleaned_data["submit_partial_forms"]
+            h.include_case_side_effects = form.cleaned_data["include_case_side_effects"]
             h.ui_frequency = form.cleaned_data["frequency"]
             h.start_condition_type = form.cleaned_data["start_condition_type"]
+            h.max_question_retries = form.cleaned_data["max_question_retries"]
             if form.cleaned_data["start_condition_type"] == "ON_DATETIME":
                 dt = parse(form.cleaned_data["start_datetime_date"]).date()
                 tm = parse(form.cleaned_data["start_datetime_time"]).time()
@@ -194,6 +191,7 @@ def add_complex_reminder_schedule(request, domain, handler_id=None):
     else:
         if h is not None:
             initial = {
+                "active"                : h.active,
                 "case_type"             : h.case_type,
                 "nickname"              : h.nickname,
                 "default_lang"          : h.default_lang,
@@ -210,22 +208,26 @@ def add_complex_reminder_schedule(request, domain, handler_id=None):
                 "until"                 : h.until,
                 "events"                : h.events,
                 "submit_partial_forms"  : h.submit_partial_forms,
+                "include_case_side_effects" : h.include_case_side_effects,
                 "start_condition_type"  : h.start_condition_type,
                 "start_datetime_date"   : str(h.start_datetime.date()) if isinstance(h.start_datetime, datetime) else None,
                 "start_datetime_time"   : str(h.start_datetime.time()) if isinstance(h.start_datetime, datetime) else None,
                 "frequency"             : h.ui_frequency,
                 "sample_id"             : h.sample_id,
                 "use_until"             : "Y" if h.until is not None else "N",
+                "max_question_retries"  : h.max_question_retries,
             }
         else:
             initial = {
                 "events"    : [CaseReminderEvent(day_num=0, fire_time=time(0,0), message={"":""}, callback_timeout_intervals=[], form_unique_id=None)],
                 "use_until" : "N",
+                "max_question_retries" : QUESTION_RETRY_CHOICES[-1],
+                "active" : True,
             }
         
         form = ComplexCaseReminderForm(initial=initial)
     
-    return render_to_response(request, "reminders/partial/add_complex_reminder.html", {
+    return render(request, "reminders/partial/add_complex_reminder.html", {
         "domain":       domain,
         "form":         form,
         "form_list":    form_list,
@@ -240,7 +242,7 @@ def manage_keywords(request, domain):
         "domain" : domain,
         "keywords" : SurveyKeyword.get_all(domain)
     }
-    return render_to_response(request, "reminders/partial/manage_keywords.html", context)
+    return render(request, "reminders/partial/manage_keywords.html", context)
 
 @reminders_permission
 def add_keyword(request, domain, keyword_id=None):
@@ -257,7 +259,7 @@ def add_keyword(request, domain, keyword_id=None):
     }
     
     if request.method == "GET":
-        return render_to_response(request, "reminders/partial/add_keyword.html", context)
+        return render(request, "reminders/partial/add_keyword.html", context)
     else:
         keyword = request.POST.get("keyword", None)
         form_unique_id = request.POST.get("survey", None)
@@ -279,7 +281,7 @@ def add_keyword(request, domain, keyword_id=None):
         
         if len(errors) > 0:
             context["errors"] = errors
-            return render_to_response(request, "reminders/partial/add_keyword.html", context)
+            return render(request, "reminders/partial/add_keyword.html", context)
         else:
             s.save()
             return HttpResponseRedirect(reverse("manage_keywords", args=[domain]))
@@ -518,7 +520,7 @@ def add_survey(request, domain, survey_id=None):
         "user_list" : CommCareUser.by_domain(domain),
         "started" : survey.has_started() if survey is not None else False,
     }
-    return render_to_response(request, "reminders/partial/add_survey.html", context)
+    return render(request, "reminders/partial/add_survey.html", context)
 
 @reminders_permission
 def survey_list(request, domain):
@@ -526,7 +528,7 @@ def survey_list(request, domain):
         "domain" : domain,
         "surveys" : Survey.get_all(domain)
     }
-    return render_to_response(request, "reminders/partial/survey_list.html", context)
+    return render(request, "reminders/partial/survey_list.html", context)
 
 @reminders_permission
 def add_sample(request, domain, sample_id=None):
@@ -619,7 +621,7 @@ def add_sample(request, domain, sample_id=None):
         "form" : form,
         "sample_id" : sample_id
     }
-    return render_to_response(request, "reminders/partial/add_sample.html", context)
+    return render(request, "reminders/partial/add_sample.html", context)
 
 @reminders_permission
 def sample_list(request, domain):
@@ -627,7 +629,7 @@ def sample_list(request, domain):
         "domain" : domain,
         "samples" : SurveySample.get_all(domain)
     }
-    return render_to_response(request, "reminders/partial/sample_list.html", context)
+    return render(request, "reminders/partial/sample_list.html", context)
 
 @reminders_permission
 def edit_contact(request, domain, sample_id, case_id):
@@ -658,6 +660,58 @@ def edit_contact(request, domain, sample_id, case_id):
         "case" : case,
         "form" : form,
     }
-    return render_to_response(request, "reminders/partial/edit_contact.html", context)
+    return render(request, "reminders/partial/edit_contact.html", context)
 
+@reminders_permission
+def reminders_in_error(request, domain):
+    handler_map = {}
+    if request.method == "POST":
+        form = RemindersInErrorForm(request.POST)
+        if form.is_valid():
+            kwargs = {}
+            if is_bigcouch():
+                # Force a write to all nodes before returning
+                kwargs["w"] = bigcouch_quorum_count()
+            current_timestamp = datetime.utcnow()
+            for reminder_id in form.cleaned_data.get("selected_reminders"):
+                reminder = CaseReminder.get(reminder_id)
+                if reminder.domain != domain:
+                    continue
+                if reminder.handler_id in handler_map:
+                    handler = handler_map[reminder.handler_id]
+                else:
+                    handler = reminder.handler
+                    handler_map[reminder.handler_id] = handler
+                reminder.error = False
+                reminder.error_msg = None
+                handler.set_next_fire(reminder, current_timestamp)
+                reminder.save(**kwargs)
+    
+    timezone = report_utils.get_timezone(request.couch_user.user_id, domain)
+    reminders = []
+    for reminder in CaseReminder.view("reminders/reminders_in_error", startkey=[domain], endkey=[domain, {}], include_docs=True).all():
+        if reminder.handler_id in handler_map:
+            handler = handler_map[reminder.handler_id]
+        else:
+            handler = reminder.handler
+            handler_map[reminder.handler_id] = handler
+        recipient = reminder.recipient
+        case = reminder.case
+        reminders.append({
+            "reminder_id" : reminder._id,
+            "handler_id" : reminder.handler_id,
+            "handler_name" : handler.nickname,
+            "case_id" : case.get_id if case is not None else None,
+            "case_name" : case.name if case is not None else None,
+            "next_fire" : tz_utils.adjust_datetime_to_timezone(reminder.next_fire, pytz.utc.zone, timezone.zone).strftime("%Y-%m-%d %H:%M:%S"),
+            "error_msg" : reminder.error_msg,
+            "recipient_name" : get_recipient_name(recipient),
+        })
+    context = {
+        "domain" : domain,
+        "reminders" : reminders,
+        "timezone" : timezone,
+        "timezone_now" : datetime.now(tz=timezone),
+    }
+    return render(request, "reminders/partial/reminders_in_error.html", context)
 

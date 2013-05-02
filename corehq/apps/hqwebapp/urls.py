@@ -15,7 +15,10 @@ urlpatterns = patterns('corehq.apps.hqwebapp.views',
     (r'^reports/$', 'redirect_to_default'),
     url(r'^bug_report/$', 'bug_report', name='bug_report'),
     url(r'^debug/notify/$', 'debug_notify', name='debug_notify'),
+    url(r'^notifications/dismiss/$', 'dismiss_notification', name="dismiss_notification")
 )
+
+urlpatterns += patterns('corehq.apps.orgs.views', url(r'^search_orgs/', 'search_orgs', name='search_orgs'))
 
 domain_specific = patterns('corehq.apps.hqwebapp.views',
     url(r'^$', 'redirect_to_default', name='domain_homepage'),

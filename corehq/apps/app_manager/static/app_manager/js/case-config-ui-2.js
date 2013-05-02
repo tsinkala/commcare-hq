@@ -347,11 +347,10 @@ var CaseXML = (function () {
         this.template.update(this.subhome.get(0), this);
         COMMCAREHQ.initBlock(this.subhome);
         $('.action-checkbox').each(function () {
-            var container = $(this).next().next('.container');
+            var container = $(this).parent().next('.well');
             if (!$(this).is(':checked')) {
                 container.hide();
             }
-            container.css({backgroundColor: '#f0f0ff', border: "1px solid #e0e0ff"});
         });
     };
     CaseXML.prototype.change = function () {
@@ -370,7 +369,7 @@ var CaseXML = (function () {
                 casexml.render();
                 casexml.change();
             }).delegate('input.action-checkbox', 'change', function () {
-                var container = $(this).next().next('.container');
+                var container = $(this).parent().next('.well');
                 if ($(this).is(':checked')) {
                     container.slideDown();
                 } else {

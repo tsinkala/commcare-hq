@@ -1,7 +1,9 @@
+from urlparse import urlparse
 from datetime import datetime
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 from django.contrib.auth.forms import AdminPasswordChangeForm
 from django.contrib.auth.models import User
 from django.contrib.auth.views import login as django_login, redirect_to_login
@@ -9,17 +11,20 @@ from django.contrib.auth.views import logout as django_logout
 from django.contrib.sites.models import Site
 from django.http import HttpResponseRedirect, HttpResponse, Http404,\
     HttpResponseServerError, HttpResponseNotFound
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
+from corehq.apps.announcements.models import Notification
+
 from corehq.apps.app_manager.models import BUG_REPORTS_DOMAIN
 from corehq.apps.app_manager.models import import_app
 from corehq.apps.domain.decorators import require_superuser,\
     login_and_domain_required
 from corehq.apps.domain.utils import normalize_domain_name, get_domain_from_url
 from corehq.apps.hqwebapp.forms import EmailAuthenticationForm, CloudCareAuthenticationForm
+from corehq.apps.users.models import CouchUser
 from corehq.apps.users.util import format_username
 from dimagi.utils.logging import notify_exception
 
-from dimagi.utils.web import render_to_response, get_url_base
+from dimagi.utils.web import get_url_base, json_response
 from django.core.urlresolvers import reverse
 from corehq.apps.domain.models import Domain
 from django.core.mail.message import EmailMessage
@@ -29,6 +34,8 @@ from couchforms.models import XFormInstance
 from soil import heartbeat
 from soil import views as soil_views
 import os
+
+from django.utils.http import urlencode
 
 def server_error(request, template_name='500.html'):
     """
@@ -60,8 +67,11 @@ def not_found(request, template_name='404.html'):
 
 def redirect_to_default(req, domain=None):
     if not req.user.is_authenticated():
-        # this actually gets hijacked by the static site, but is necessary
-        url = reverse('corehq.apps.hqwebapp.views.landing_page')
+        if domain != None:
+            url = reverse('domain_login', args=[domain])
+        else:
+            # this actually gets hijacked by the static site, but is necessary
+            url = reverse('corehq.apps.hqwebapp.views.landing_page')
     else:
         if domain:
             domain = normalize_domain_name(domain)
@@ -69,7 +79,7 @@ def redirect_to_default(req, domain=None):
         else:
             domains = Domain.active_for_user(req.user)
         if   0 == len(domains) and not req.user.is_superuser:
-            return no_permissions(req)
+            return redirect('registration_domain')
         elif 1 == len(domains):
             if domains[0]:
                 domain = domains[0].name
@@ -118,7 +128,7 @@ def password_change(req):
     else:
         password_form = AdminPasswordChangeForm(user_to_edit)
     template_name = "password_change.html"
-    return render_to_response(req, template_name, {"form": password_form})
+    return render(req, template_name, {"form": password_form})
 
 
 def server_up(req):
@@ -161,13 +171,13 @@ def server_up(req):
         return HttpResponse('\n'.join(message), status=500)
 
 
-def no_permissions(request, template_name="no_permission.html"):
-    next = request.GET.get('next', None)
+def no_permissions(request, redirect_to=None, template_name="no_permission.html"):
+    next = redirect_to or request.GET.get('next', None)
     if request.GET.get('switch', None) == 'true':
         logout(request)
         return redirect_to_login(next or request.path)
 
-    return render_to_response(request, template_name, {'next': next})
+    return render(request, template_name, {'next': next})
 
 def _login(req, domain, template_name):
     if req.user.is_authenticated() and req.method != "POST":
@@ -199,10 +209,26 @@ def login(req, template_name="login_and_password/login.html"):
 def domain_login(req, domain, template_name="login_and_password/login.html"):
     return _login(req, domain, template_name)
 
+def is_mobile_url(url):
+    # Minor hack
+    return ('reports/custom/mobile' in url)
+
 def logout(req, template_name="hqwebapp/loggedout.html"):
+    referer = req.META.get('HTTP_REFERER')
+    domain = get_domain_from_url(urlparse(referer).path) if referer else None
+
     req.base_template = settings.BASE_TEMPLATE
     response = django_logout(req, **{"template_name": template_name})
-    return HttpResponseRedirect(reverse('login'))
+    
+    if referer and domain and is_mobile_url(referer):
+        mobile_mainnav_url = reverse('custom_project_report_dispatcher', args=[domain, 'mobile/mainnav'])
+        mobile_login_url = reverse('domain_mobile_login', kwargs={'domain': domain})
+        return HttpResponseRedirect('%s?%s' % (mobile_login_url, urlencode({'next': mobile_mainnav_url})))
+    elif referer and domain:
+        domain_login_url = reverse('domain_login', kwargs={'domain': domain})
+        return HttpResponseRedirect('%s' % domain_login_url)
+    else:
+        return HttpResponseRedirect(reverse('login'))
 
 @login_and_domain_required
 def retrieve_download(req, domain, download_id, template="hqwebapp/file_download.html"):
@@ -217,7 +243,8 @@ def debug_notify(request):
             "If you want to achieve a 500-style email-out but don't want the user to see a 500, use notify_exception(request[, message])")
     return HttpResponse("Email should have been sent")
 
-
+@login_required()
+@require_POST
 def bug_report(req):
     report = dict([(key, req.POST.get(key, '')) for key in (
         'subject',
@@ -228,7 +255,7 @@ def bug_report(req):
         'when',
         'message',
         'app_id',
-        )])
+    )])
 
     report['user_agent'] = req.META['HTTP_USER_AGENT']
     report['datetime'] = datetime.utcnow()
@@ -240,9 +267,17 @@ def bug_report(req):
     else:
         report['copy_url'] = None
 
+    try:
+        couch_user = CouchUser.get_by_username(report['username'])
+        full_name = couch_user.full_name
+    except Exception:
+        full_name = None
+    report['full_name'] = full_name
+
     subject = u'{subject} ({domain})'.format(**report)
     message = (
         u"username: {username}\n"
+        u"full name: {full_name}\n"
         u"domain: {domain}\n"
         u"url: {url}\n"
         u"copy url: {copy_url}\n"
@@ -253,8 +288,10 @@ def bug_report(req):
         u"{message}\n"
         ).format(**report)
 
-
-    reply_to = report['username']
+    if full_name and not any([c in full_name for c in '<>"']):
+        reply_to = '"{full_name}" <{username}>'.format(**report)
+    else:
+        reply_to = report['username']
 
     # if the person looks like a commcare user, fogbugz can't reply
     # to their email, so just use the default
@@ -278,3 +315,39 @@ def bug_report(req):
         return HttpResponseRedirect(reverse('homepage'))
 
     return HttpResponse()
+
+
+@login_required()
+@require_POST
+def dismiss_notification(request):
+    note_id = request.POST.get('note_id', None)
+    note = Notification.get(note_id)
+    if note:
+        if note.user != request.couch_user.username:
+            return json_response({"status": "failure: Not the same user"})
+
+        note.dismissed = True
+        note.save()
+        return json_response({"status": "success"})
+    return json_response({"status": "failure: No note by that name"})
+
+
+def render_static(request, template):
+    """
+    Takes an html file and renders it Commcare HQ's styling
+    """
+    return render(request, "hqwebapp/blank.html", {'tmpl': template})
+
+
+def eula(request):
+    return render_static(request, "eula.html")
+
+def cda(request):
+    return render_static(request, "cda.html")
+
+def apache_license(request):
+    return render_static(request, "apache_license.html")
+
+def bsd_license(request):
+    return render_static(request, "bsd_license.html")
+
