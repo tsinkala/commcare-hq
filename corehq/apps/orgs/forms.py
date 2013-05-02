@@ -1,0 +1,82 @@
+from django import forms
+from django.core.validators import validate_email
+from corehq.apps.domain.models import Domain
+import re
+from corehq.apps.domain.utils import new_domain_re, website_re, new_org_title_re
+from corehq.apps.orgs.models import Organization, Team
+from corehq.apps.registration.forms import OrganizationRegistrationForm
+from corehq.apps.users.forms import RoleForm
+from corehq.apps.users.models import CouchUser, OrganizationUserRole
+
+class AddProjectForm(RoleForm):
+    role = forms.ChoiceField(label="Project name", choices=())
+    domain_slug = forms.CharField(label="New project name", help_text="""
+This project will be given a new name within this organization. You may leave it the same or choose a new name.
+""")
+
+    def __init__(self, org_name, *args, **kwargs):
+        self.org_name = org_name
+        super(AddProjectForm, self).__init__(*args, **kwargs)
+
+    def clean_domain_slug(self):
+        data = self.cleaned_data['domain_slug'].strip().lower()
+
+        if not re.match("^%s$" % new_domain_re, data):
+            raise forms.ValidationError('Only lowercase letters and numbers allowed. Single hyphens may be used to separate words.')
+
+        conflict = Domain.get_by_organization_and_slug(self.org_name, data) or Domain.get_by_organization_and_slug(self.org_name, data.replace('-', '.'))
+        if conflict:
+            raise forms.ValidationError('A project with that name already exists.')
+        return data
+
+    def clean(self):
+        for field in self.cleaned_data:
+            if isinstance(self.cleaned_data[field], basestring):
+                self.cleaned_data[field] = self.cleaned_data[field].strip()
+        return self.cleaned_data
+
+class AddMemberForm(RoleForm):
+    def __init__(self, org_name, *args, **kwargs):
+        self.org_name = org_name
+        super(AddMemberForm, self).__init__(*args, **kwargs)
+
+    email = forms.CharField(label = "User Email", max_length=25)
+    role = forms.ChoiceField(choices=())
+
+    def clean_email(self):
+        data = self.cleaned_data['email'].strip().lower()
+        validate_email(data)
+        exists = CouchUser.get_by_username(data)
+        org = Organization.get_by_name(self.org_name)
+        if exists:
+            for id in org.members:
+                if id == exists.get_id:
+                    raise forms.ValidationError('User is already part of this organization!')
+        return data
+
+    def clean(self):
+        for field in self.cleaned_data:
+            if isinstance(self.cleaned_data[field], basestring):
+                self.cleaned_data[field] = self.cleaned_data[field].strip()
+        return self.cleaned_data
+
+class AddTeamForm(forms.Form):
+    team = forms.CharField(label="Team Name", max_length=20)
+
+    def __init__(self, org_name, *args, **kwargs):
+        self.org_name = org_name
+        super(AddTeamForm, self).__init__(*args, **kwargs)
+
+    def clean_team(self):
+        data = self.cleaned_data['team'].strip()
+        org_teams = Team.get_by_org(self.org_name)
+        for t in org_teams:
+            if t.name == data:
+                raise forms.ValidationError('A team with that name already exists.')
+        return data
+
+class UpdateOrgInfo(OrganizationRegistrationForm):
+    def __init__(self, *args, **kwargs):
+        super(UpdateOrgInfo, self).__init__(*args, **kwargs)
+        del self.fields['org_name']
+        del self.fields['tos_confirmed']

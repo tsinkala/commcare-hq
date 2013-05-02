@@ -1,0 +1,7 @@
+{% load report_tags %}
+<nav>
+    <ul class="nav nav-list" id="report-list">
+        {% report_list 'corehq.apps.reports.dispatcher.ProjectReportDispatcher' %}
+        {% report_list 'corehq.apps.reports.dispatcher.CustomProjectReportDispatcher' %}
+    </ul>
+</nav>
