@@ -21,13 +21,19 @@ class UsersMiddleware(object):
     def process_view(self, request, view_func, view_args, view_kwargs):
         if 'domain' in view_kwargs:
             request.domain = view_kwargs['domain']
+        if 'org' in view_kwargs:
+            request.org = view_kwargs['org']
         if request.user and hasattr(request.user, 'get_profile'):
             request.couch_user = CouchUser.from_django_user(request.user)
             if 'domain' in view_kwargs:
                 domain = request.domain
                 if not request.couch_user:
-                    couch_domain = Domain.view("domain/domains", key=domain,
-                                                    reduce=False, include_docs=True).one()
+                    couch_domain = Domain.view("domain/domains",
+                        key=domain,
+                        reduce=False,
+                        include_docs=True,
+                        stale=settings.COUCH_STALE_QUERY,
+                    ).one()
                     if couch_domain and couch_domain.is_public:
                         request.couch_user = PublicUser(domain)
                     else:

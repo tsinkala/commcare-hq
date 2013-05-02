@@ -1,6 +1,6 @@
 from django.conf.urls.defaults import *
 from corehq.apps.domain.decorators import login_and_domain_required as protect
-from corehq.apps.reports.dispatcher import ReportDispatcher, ProjectReportDispatcher, CustomProjectReportDispatcher
+from corehq.apps.reports.dispatcher import ReportDispatcher, ProjectReportDispatcher, CustomProjectReportDispatcher, BasicReportDispatcher, AdminReportDispatcher
 
 dodoma_reports = patterns('corehq.apps.reports.dodoma',
     url('^household_verification_json$', 'household_verification_json'),
@@ -34,7 +34,9 @@ phonelog_reports = patterns('',
 
 urlpatterns = patterns('corehq.apps.reports.views',
     url(r'^$', "default", name="reports_home"),
+    url(r'^saved_reports', "saved_reports", name="saved_reports"),
 
+    url(r'^case_data/(?P<case_id>[\w\-]+)/(?P<xform_id>[\w\-:]+)/$', 'case_form_data', name="case_form_data"),
     url(r'^case_data/(?P<case_id>[\w\-]+)/$', 'case_details', name="case_details"),
 
     # Download and view form data
@@ -65,6 +67,9 @@ urlpatterns = patterns('corehq.apps.reports.views',
     ## saved
     url(r"^export/saved/download/(?P<export_id>[\w\-]+)/$", "hq_download_saved_export", name="hq_download_saved_export"),
 
+    # once off email
+    url(r"^email_onceoff/(?P<report_slug>[\w_]+)/$", 'email_report'),
+
     # Saved reports
     url(r"^configs$", 'add_config', name='add_report_config'),
     url(r"^configs/(?P<config_id>[\w-]+)$", 'delete_config',
@@ -89,4 +94,8 @@ urlpatterns = patterns('corehq.apps.reports.views',
 
     url(r'^custom/', include(custom_report_urls)),
     ProjectReportDispatcher.url_pattern(),
+)
+
+report_urls = patterns('',
+    BasicReportDispatcher.url_pattern(),
 )

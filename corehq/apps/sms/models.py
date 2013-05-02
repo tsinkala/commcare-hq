@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # vim: ai ts=4 sts=4 et sw=4
+import logging
 from couchdbkit.ext.django.schema import *
 
 from datetime import datetime
@@ -9,7 +10,7 @@ from casexml.apps.case.models import CommCareCase
 from dimagi.utils.mixins import UnicodeMixIn
 from dimagi.utils.parsing import json_format_datetime
 from casexml.apps.case.signals import case_post_save
-from .mixin import CommCareMobileContactMixin, MobileBackend
+from .mixin import CommCareMobileContactMixin, MobileBackend, PhoneNumberInUseException
 from corehq.apps.sms import util as smsutil
 
 INCOMING = "I"
@@ -18,10 +19,6 @@ OUTGOING = "O"
 DIRECTION_CHOICES = (
     (INCOMING, "Incoming"),
     (OUTGOING, "Outgoing"))
-
-MISSED_EXPECTED_CALLBACK = "CALLBACK_MISSED"
-
-EVENT_TYPE_CHOICES = [MISSED_EXPECTED_CALLBACK]
 
 class MessageLog(Document, UnicodeMixIn):
     base_doc                    = "MessageLog"
@@ -162,8 +159,15 @@ class CallLog(MessageLog):
     answered = BooleanProperty(default=False)
     duration = IntegerProperty() # Length of the call in seconds
     gateway_session_id = StringProperty() # This is the session id returned from the backend
+    xforms_session_id = StringProperty()
     error = BooleanProperty(default=False)
     error_message = StringProperty()
+    submit_partial_form = BooleanProperty(default=False) # True to submit a partial form on hangup if it's not completed yet
+    include_case_side_effects = BooleanProperty(default=False)
+    max_question_retries = IntegerProperty() # Max number of times to retry a question with an invalid response before hanging up
+    current_question_retry_count = IntegerProperty(default=0) # A counter of the number of invalid responses for the current question
+    use_precached_first_response = BooleanProperty(default=False)
+    first_response = StringProperty()
     
     def __unicode__(self):
         to_from = (self.direction == INCOMING) and "from" or "to"
@@ -217,12 +221,42 @@ class CallLog(MessageLog):
         return result
 
 class EventLog(Document):
+    base_doc                    = "EventLog"
     domain                      = StringProperty()
     date                        = DateTimeProperty()
     couch_recipient_doc_type    = StringProperty()
     couch_recipient             = StringProperty()
-    event_type                  = StringProperty(choices=EVENT_TYPE_CHOICES)
 
+CALLBACK_PENDING = "PENDING"
+CALLBACK_RECEIVED = "RECEIVED"
+CALLBACK_MISSED = "MISSED"
+
+class ExpectedCallbackEventLog(EventLog):
+    status = StringProperty(choices=[CALLBACK_PENDING,CALLBACK_RECEIVED,CALLBACK_MISSED])
+    
+    @classmethod
+    def by_domain(cls, domain, start_date=None, end_date={}):
+        """
+        Note that start_date and end_date are expected in JSON format.
+        """
+        return cls.view("sms/expected_callback_event",
+                        startkey=[domain, start_date],
+                        endkey=[domain, end_date],
+                        include_docs=True).all()
+
+FORWARD_ALL = "ALL"
+FORWARD_BY_KEYWORD = "KEYWORD"
+FORWARDING_CHOICES = [FORWARD_ALL, FORWARD_BY_KEYWORD]
+
+class ForwardingRule(Document):
+    domain = StringProperty()
+    forward_type = StringProperty(choices=FORWARDING_CHOICES)
+    keyword = StringProperty()
+    backend_id = StringProperty() # id of MobileBackend which will be used to do the forwarding
+    
+    def retire(self):
+        self.doc_type += "-Deleted"
+        self.save()
 
 class MessageLogOld(models.Model):
     couch_recipient    = models.TextField()
@@ -264,15 +298,17 @@ class CommConnectCase(CommCareCase, CommCareMobileContactMixin):
             try:
                 self.delete_verified_number()
             except:
-                #TODO: Handle exception
-                pass
+                logging.exception("Could not delete verified number for owner %s" % self._id)
         elif contact_phone_number_is_verified:
             try:
-                self.delete_verified_number()
-                self.save_verified_number(self.domain, contact_phone_number, True, contact_backend_id, ivr_backend_id=contact_ivr_backend_id)
+                self.save_verified_number(self.domain, contact_phone_number, True, contact_backend_id, ivr_backend_id=contact_ivr_backend_id, only_one_number_allowed=True)
+            except PhoneNumberInUseException:
+                try:
+                    self.delete_verified_number()
+                except:
+                    logging.exception("Could not delete verified number for owner %s" % self._id)
             except:
-                #TODO: Handle exception
-                pass
+                logging.exception("Could not save verified number for owner %s" % self._id)
         else:
             #TODO: Start phone verification workflow
             pass
@@ -292,8 +328,8 @@ class CommConnectCase(CommCareCase, CommCareMobileContactMixin):
 
 
 def case_changed_receiver(sender, case, **kwargs):
-    c = CommConnectCase.get(case._id)
-    c.case_changed()
+    contact = CommConnectCase.wrap(case.to_json())
+    contact.case_changed()
 
 
 case_post_save.connect(case_changed_receiver, CommCareCase)

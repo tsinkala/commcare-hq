@@ -20,6 +20,19 @@ $(function() {
             clearAnnouncement(announcement_id);
         }
     });
+
+    // disable-on-submit is a class for form submit buttons so they're automatically disabled when the form is submitted
+    $(document).on('submit', 'form', function(ev) {
+        var form = $(ev.target);
+        form.find('.disable-on-submit').prop('disabled',true).addClass('disabled');
+    });
+
+    $(document).on('click', '.notification-close-btn', function() {
+        var note_id = $(this).data('note-id');
+        var post_url = $(this).data('url');
+        $.post(post_url, {note_id: note_id});
+        $(this).parents('.alert').hide(150);
+    });
 });
 
 $.fn.hqHelp = function () {
@@ -37,3 +50,13 @@ $.fn.hqHelp = function () {
         })
     });
 };
+
+$.showMessage = function (message, level) {
+    $notice = $('<div />').addClass("alert fade in alert-block alert-full page-level-alert")
+        .addClass("alert-" + level);
+    var $closeIcon = $('<a />').addClass("close").attr("data-dismiss", "alert");
+    $closeIcon.attr("href", "#").html("&times;");
+    $notice.append($closeIcon);
+    $notice.append(message);
+    $(".hq-page-header-container").prepend($notice);
+}

@@ -5,19 +5,27 @@ from couchdbkit.exceptions import ResourceConflict
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.db import models
-from couchdbkit.ext.django.schema import Document, StringProperty,\
-    BooleanProperty, DateTimeProperty, IntegerProperty, DocumentSchema, SchemaProperty, DictProperty, ListProperty
+from couchdbkit.ext.django.schema import (Document, StringProperty, BooleanProperty, DateTimeProperty, IntegerProperty,
+                                          DocumentSchema, SchemaProperty, DictProperty, ListProperty,
+                                          StringListProperty)
 from django.utils.safestring import mark_safe
 from corehq.apps.appstore.models import Review, SnapshotMixin
+from corehq.apps.domain.utils import get_domain_module_map
+from dimagi.utils.decorators.memoized import memoized
 from dimagi.utils.html import format_html
 from dimagi.utils.logging import notify_exception
 from dimagi.utils.timezones import fields as tz_fields
-from dimagi.utils.couch.database import get_db
+from dimagi.utils.couch.database import get_db, get_safe_write_kwargs, apply_update
 from itertools import chain
 from langcodes import langs as all_langs
 from collections import defaultdict
+from corehq.apps.commtrack.models import CommtrackConfig
 
 lang_lookup = defaultdict(str)
+
+DATA_DICT = settings.INTERNAL_DATA
+AREA_CHOICES = [a["name"] for a in DATA_DICT["area"]]
+SUB_AREA_CHOICES = reduce(list.__add__, [a["sub_areas"] for a in DATA_DICT["area"]], [])
 
 for lang in all_langs:
     lang_lookup[lang['three']] = lang['names'][0] # arbitrarily using the first name if there are multiple
@@ -109,13 +117,22 @@ class HQBillingDomainMixin(DocumentSchema):
     billing_number = StringProperty()
     currency_code = StringProperty(default=settings.DEFAULT_CURRENCY)
 
+    # used to bill client
+    is_sms_billable = BooleanProperty()
+    billable_client = StringProperty()
+
     def update_billing_info(self, **kwargs):
         self.billing_number = kwargs.get('phone_number','')
         self.billing_address.update_billing_address(**kwargs)
         self.currency_code = kwargs.get('currency_code', settings.DEFAULT_CURRENCY)
 
 
-class Deployment(DocumentSchema):
+class UpdatableSchema():
+    def update(self, new_dict):
+        for kw in new_dict:
+            self[kw] = new_dict[kw]
+
+class Deployment(DocumentSchema, UpdatableSchema):
     date = DateTimeProperty()
     city = StringProperty()
     country = StringProperty()
@@ -123,16 +140,44 @@ class Deployment(DocumentSchema):
     description = StringProperty()
     public = BooleanProperty(default=False)
 
-    def update(self, new_dict):
-        for kw in new_dict:
-            self[kw] = new_dict[kw]
-
 class LicenseAgreement(DocumentSchema):
     signed = BooleanProperty(default=False)
     type = StringProperty()
     date = DateTimeProperty()
     user_id = StringProperty()
     user_ip = StringProperty()
+
+class InternalProperties(DocumentSchema, UpdatableSchema):
+    """
+    Project properties that should only be visible/editable by superusers
+    """
+    sf_contract_id = StringProperty()
+    sf_account_id = StringProperty()
+    commcare_edition = StringProperty(choices=["", "standard", "plus", "advanced"], default="")
+    services = StringProperty(choices=["", "basic", "plus", "full", "custom"], default="")
+    initiative = StringListProperty()
+    project_state = StringProperty(choices=["", "POC", "transition", "at-scale"], default="")
+    self_started = BooleanProperty()
+    area = StringProperty(choices=AREA_CHOICES + [""], default="")
+    sub_area = StringProperty(choices=SUB_AREA_CHOICES + [""], default="")
+    using_adm = BooleanProperty()
+    using_call_center = BooleanProperty()
+    custom_eula = BooleanProperty()
+    can_use_data = BooleanProperty()
+    notes = StringProperty()
+    organization_name = StringProperty()
+
+
+class CaseDisplaySettings(DocumentSchema):
+    case_details = DictProperty(
+        verbose_name="Mapping of case type to definitions of properties "
+                     "to display above the fold on case details")
+    form_details = DictProperty(
+        verbose_name="Mapping of form xmlns to definitions of properties "
+                     "to display for individual forms")
+
+    # todo: case list
+
 
 class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
     """Domain is the highest level collection of people/stuff
@@ -147,18 +192,28 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
     default_timezone = StringProperty(default=getattr(settings, "TIME_ZONE", "UTC"))
     case_sharing = BooleanProperty(default=False)
     organization = StringProperty()
-    slug = StringProperty() # the slug for this project namespaced within an organization
+    hr_name = StringProperty() # the human-readable name for this project within an organization
     eula = SchemaProperty(LicenseAgreement)
+    creating_user = StringProperty() # username of the user who created this domain
 
     # domain metadata
     project_type = StringProperty() # e.g. MCH, HIV
     customer_type = StringProperty() # plus, full, etc.
-    is_test = BooleanProperty(default=False)
+    is_test = BooleanProperty(default=True)
     description = StringProperty()
     short_description = StringProperty()
     is_shared = BooleanProperty(default=False)
     commtrack_enabled = BooleanProperty(default=False)
+    case_display = SchemaProperty(CaseDisplaySettings) 
+    
+    # CommConnect settings
     survey_management_enabled = BooleanProperty(default=False)
+    sms_case_registration_enabled = BooleanProperty(default=False) # Whether or not a case can register via sms
+    sms_case_registration_type = StringProperty() # Case type to apply to cases registered via sms
+    sms_case_registration_owner_id = StringProperty() # Owner to apply to cases registered via sms
+    sms_case_registration_user_id = StringProperty() # Submitting user to apply to cases registered via sms
+    sms_mobile_worker_registration_enabled = BooleanProperty(default=False) # Whether or not a mobile worker can register via sms
+    default_sms_backend_id = StringProperty()
 
     # exchange/domain copying stuff
     is_snapshot = BooleanProperty(default=False)
@@ -173,6 +228,8 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
     author = StringProperty()
     phone_model = StringProperty()
     attribution_notes = StringProperty()
+    publisher = StringProperty(choices=["organization", "user"], default="user")
+    yt_id = StringProperty()
 
     deployment = SchemaProperty(Deployment)
 
@@ -183,6 +240,14 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
 
     cached_properties = DictProperty()
 
+    internal = SchemaProperty(InternalProperties)
+
+    # extra user specified properties
+    tags = StringListProperty()
+    area = StringProperty(choices=AREA_CHOICES)
+    sub_area = StringProperty(choices=SUB_AREA_CHOICES)
+    launch_date = DateTimeProperty
+
     # to be eliminated from projects and related documents when they are copied for the exchange
     _dirty_fields = ('admin_password', 'admin_password_charset', 'city', 'country', 'region', 'customer_type')
 
@@ -190,19 +255,33 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
     def wrap(cls, data):
         # for domains that still use original_doc
         should_save = False
-        if data.has_key('original_doc'):
+        if 'original_doc' in data:
             original_doc = data['original_doc']
             del data['original_doc']
             should_save = True
             if original_doc:
-                original_doc = Domain.get_by_name(data['original_doc'])
+                original_doc = Domain.get_by_name(original_doc)
                 data['copy_history'] = [original_doc._id]
 
         # for domains that have a public domain license
-        if data.has_key("license"):
+        if 'license' in data:
             if data.get("license", None) == "public":
                 data["license"] = "cc"
                 should_save = True
+
+        # if not 'creating_user' in data:
+        #     should_save = True
+        #     from corehq.apps.users.models import CouchUser
+        #     admins = CouchUser.view("users/admins_by_domain", key=data["name"], reduce=False, include_docs=True).all()
+        #     if len(admins) == 1:
+        #         data["creating_user"] = admins[0].username
+        #     else:
+        #         data["creating_user"] = None
+
+        if 'slug' in data and data["slug"]:
+            data["hr_name"] = data["slug"]
+            del data["slug"]
+
         self = super(Domain, cls).wrap(data)
         if self.get_id:
             self.apply_migrations()
@@ -222,9 +301,11 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
         if couch_user:
             domain_names = couch_user.get_domains()
             return Domain.view("domain/by_status",
-                                    keys=[[is_active, d] for d in domain_names],
-                                    reduce=False,
-                                    include_docs=True).all()
+                keys=[[is_active, d] for d in domain_names],
+                reduce=False,
+                include_docs=True,
+                stale=settings.COUCH_STALE_QUERY,
+            ).all()
         else:
             return []
 
@@ -353,7 +434,7 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
         return self.name
 
     @classmethod
-    def get_by_name(cls, name):
+    def get_by_name(cls, name, strict=False):
         if not name:
             # get_by_name should never be called with name as None (or '', etc)
             # I fixed the code in such a way that if I raise a ValueError
@@ -369,11 +450,18 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
                 else:
                     notify_exception(None, '%r is not a valid domain name' % name)
                     return None
-
+        extra_args = {'stale': settings.COUCH_STALE_QUERY} if not strict else {}
         result = cls.view("domain/domains",
-                            key=name,
-                            reduce=False,
-                            include_docs=True).first()
+            key=name,
+            reduce=False,
+            include_docs=True,
+            **extra_args
+        ).first()
+
+        if result is None and not strict:
+            # on the off chance this is a brand new domain, try with strict
+            return cls.get_by_name(name, strict=True)
+
         return result
 
     @classmethod
@@ -386,9 +474,9 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
         return result
 
     @classmethod
-    def get_by_organization_and_slug(cls, organization, slug):
+    def get_by_organization_and_hrname(cls, organization, hr_name):
         result = cls.view("domain/by_organization",
-                          key=[organization, slug],
+                          key=[organization, hr_name],
                           reduce=False,
                           include_docs=True)
         return result
@@ -405,7 +493,7 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
             new_domain = Domain(name=name,
                             is_active=is_active,
                             date_created=datetime.utcnow())
-            new_domain.save()
+            new_domain.save(**get_safe_write_kwargs())
             return new_domain
 
     def password_format(self):
@@ -445,6 +533,13 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
         new_domain.snapshot_time = None
         new_domain.organization = None # TODO: use current user's organization (?)
 
+        # reset the cda
+        new_domain.cda.signed = False
+        new_domain.cda.date = None
+        new_domain.cda.type = None
+        new_domain.cda.user_id = None
+        new_domain.cda.user_ip = None
+
         for field in self._dirty_fields:
             if hasattr(new_domain, field):
                 delattr(new_domain, field)
@@ -462,8 +557,9 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
         new_domain.save()
 
         if user:
-            user.add_domain_membership(new_domain_name, is_admin=True)
-            user.save()
+            def add_dom_to_user(user):
+                user.add_domain_membership(new_domain_name, is_admin=True)
+            apply_update(user, add_dom_to_user)
 
         return new_domain
 
@@ -494,7 +590,7 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
             new_doc.domain = new_domain_name
 
         if self.is_snapshot and doc_type == 'Application':
-            new_doc.clean_mapping()
+            new_doc.prepare_multimedia_for_exchange()
 
         new_doc.save()
         return new_doc
@@ -507,7 +603,7 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
             if copy is None:
                 return None
             copy.is_snapshot = True
-            copy.organization = self.organization
+            copy.organization = self.organization # i don't think we want this?
             copy.snapshot_time = datetime.now()
             del copy.deployment
             copy.save()
@@ -519,6 +615,7 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
     def snapshots(self):
         return Domain.view('domain/snapshots', startkey=[self._id, {}], endkey=[self._id], include_docs=True, descending=True)
 
+    @memoized
     def published_snapshot(self):
         snapshots = self.snapshots().all()
         for snapshot in snapshots:
@@ -548,13 +645,15 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
         results = get_db().search('domain/snapshot_search', q=json.dumps(query), limit=limit, skip=skip, stale='ok')
         return map(cls.get, [r['id'] for r in results]), results.total_rows
 
-    def organization_doc(self):
+    @memoized
+    def get_organization(self):
         from corehq.apps.orgs.models import Organization
         return Organization.get_by_name(self.organization)
 
+    @memoized
     def organization_title(self):
         if self.organization:
-            return self.organization_doc().title
+            return self.get_organization().title
         else:
             return ''
 
@@ -562,11 +661,15 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
         self.deployment.update(kwargs)
         self.save()
 
+    def update_internal(self, **kwargs):
+        self.internal.update(kwargs)
+        self.save()
+
     def display_name(self):
         if self.is_snapshot:
             return "Snapshot of %s" % self.copied_from.display_name()
-        if self.organization:
-            return self.slug
+        if self.hr_name and self.organization:
+            return self.hr_name
         else:
             return self.name
 
@@ -574,14 +677,14 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
         if self.is_snapshot:
             return format_html(
                 "Snapshot of {0} &gt; {1}",
-                self.organization_doc().title,
+                self.get_organization().title,
                 self.copied_from.display_name()
             )
         if self.organization:
             return format_html(
                 '{0} &gt; {1}',
-                self.organization_doc().title,
-                self.slug
+                self.get_organization().title,
+                self.hr_name or self.name
             )
         else:
             return self.name
@@ -621,7 +724,7 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
             media_ids = set()
             apps = [app for app in dom_with_media.full_applications() if app.get_id in from_apps]
             for app in apps:
-                for _, m in app.get_media_documents():
+                for _, m in app.get_media_objects():
                     if m.get_id not in media_ids:
                         media.append(m)
                         media_ids.add(m.get_id)
@@ -669,6 +772,34 @@ class Domain(Document, HQBillingDomainMixin, SnapshotMixin):
     def public_deployments(cls):
         return Domain.view('domain/with_deployment', include_docs=True).all()
 
+    @classmethod
+    def get_module_by_name(cls, domain_name):
+        """
+        import and return the python module corresponding to domain_name, or
+        None if it doesn't exist.
+        
+        """
+        module_name = get_domain_module_map().get(domain_name, domain_name)
+
+        try:
+            return __import__(module_name) if module_name else None
+        except ImportError:
+            return None
+
+    @property
+    def commtrack_settings(self):
+        if self.commtrack_enabled:
+            return CommtrackConfig.for_domain(self.name)
+        else:
+            return None
+
+    def get_case_display(self, case):
+        """Get the properties display definition for a given case"""
+        return self.case_display.case_details.get(case.type)
+
+    def get_form_display(self, form):
+        """Get the properties display definition for a given XFormInstance"""
+        return self.case_display.form_details.get(form.xmlns)
 
 ##############################################################################################################
 #

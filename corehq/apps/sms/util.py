@@ -1,3 +1,4 @@
+import logging
 import re
 import urllib
 import uuid
@@ -10,6 +11,12 @@ from corehq.apps.hqcase.utils import submit_case_blocks
 
 from xml.etree.ElementTree import XML, tostring
 from dimagi.utils.parsing import json_format_datetime
+
+def strip_plus(phone_number):
+    if isinstance(phone_number, basestring) and phone_number[0] == "+":
+        return phone_number[1:]
+    else:
+        return phone_number
 
 def clean_phone_number(text):
     """
@@ -66,14 +73,17 @@ def submit_xml(domain, template, context):
     submit_case_blocks(case_block, domain)
 
 # Creates a case by submitting system-generated casexml
-def register_sms_contact(domain, case_type, case_name, user_id, contact_phone_number, contact_phone_number_is_verified="1", contact_backend_id=None, language_code=None, time_zone=None):
+def register_sms_contact(domain, case_type, case_name, user_id, contact_phone_number, contact_phone_number_is_verified="1", contact_backend_id=None, language_code=None, time_zone=None, owner_id=None):
     utcnow = str(datetime.datetime.utcnow())
     case_id = str(uuid.uuid3(uuid.NAMESPACE_URL, utcnow))
+    if owner_id is None:
+        owner_id = user_id
     context = {
         "case_id" : case_id,
         "date_modified" : json_format_datetime(datetime.datetime.utcnow()),
         "case_type" : case_type,
         "case_name" : case_name,
+        "owner_id" : owner_id,
         "user_id" : user_id,
         "contact_phone_number" : contact_phone_number,
         "contact_phone_number_is_verified" : contact_phone_number_is_verified,
@@ -135,3 +145,15 @@ def close_task(domain, subcase_guid, submitting_user_id):
     }
     submit_xml(domain, "sms/xml/close_task.xml", context)
 
+def create_billable_for_sms(msg, backend_api, delay=True, **kwargs):
+    try:
+        from hqbilling.tasks import bill_client_for_sms
+        from hqbilling.models import API_TO_BILLABLE
+        billable_class = API_TO_BILLABLE.get(backend_api)
+        if delay:
+            bill_client_for_sms.delay(billable_class, msg._id, **kwargs)
+        else:
+            bill_client_for_sms(billable_class, msg._id, **kwargs)
+    except Exception as e:
+        logging.error("%s backend contacted, but errors in creating billable for incoming message. Error: %s" %
+                      (backend_api, e))

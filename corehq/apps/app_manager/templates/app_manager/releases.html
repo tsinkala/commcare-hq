@@ -6,7 +6,7 @@
 {% load timezone_tags %}
 {% load i18n %}
 {% block js %}{{ block.super }}
-    <script src="{% static 'hqwebapp/javascripts/knockout.mapping.js' %}"></script>
+    <script src="{% static 'hqwebapp/js/lib/knockout.mapping.js' %}"></script>
     <script src="{% static 'hqwebapp/js/knockout-bindings.js' %}"></script>
     <script src="{% static 'app_manager/js/releases.js' %}"></script>
 {% endblock %}
@@ -111,15 +111,15 @@
             click: makeNewBuild,
             attr: {disabled: !makeNewBuildEnabled() ? 'disabled' : undefined},
             css: {disabled: !makeNewBuildEnabled()}
-        ">{% trans 'Make New Build' %}</button>
+        ">{% trans 'Make New Version' %}</button>
 
         <div id="build-errors-wrapper"></div>
 
         <table class="table">
             <tr>
                 <th colspan="2">Version</th>
-                <th colspan="2">Build Date &amp; Time</th>
-                <th>CommCare Binary</th>
+                <th colspan="2">Date &amp; Time</th>
+                <th>CommCare Version</th>
                 <th></th>
                 {% if edit %}
                 <th></th>
@@ -217,7 +217,7 @@
                         </div>
                         <div data-bind="visible: doneFetching() && !savedApps().length, css: {hidden: false}" class="hidden">
                             <div class="alert alert-info">
-                                {% trans "This application currently has no builds" %}
+                                {% trans 'Use the <strong>Make New Version</strong> button to create and deploy the latest version of your application' %}
                             </div>
                         </div>
                     </td>
@@ -285,7 +285,7 @@
                     <div class="accordion-group">
                         <div class="accordion-heading">
                             <a class="accordion-toggle">
-                                {% trans "Download to J2ME" %}
+                                {% trans "Download to Java Phone" %}
                             </a>
                         </div>
                         <div class="accordion-body collapse">
@@ -308,12 +308,36 @@
                             </div>
                         </div>
                     </div>
-
                     <div class="accordion-group">
                         <div class="accordion-heading">
-                            <a class="accordion-toggle" data-bind="openJqm: $root.url('odk', id)">
-                                {% trans "Download to CommCare ODK (Android)" %}
+                            <a class="accordion-toggle">
+                                {% trans "Download to Android" %}
                             </a>
+                        </div>
+                        <div class="accordion-body collapse">
+                            <div class="accordion-inner">
+                                <p>
+                                    <span data-bind="visible: short_odk_url()">
+                                        {% blocktrans %}
+                                            Install by typing the following URL
+                                            into the application install screen:
+                                        {% endblocktrans %}
+                                        <a data-bind="
+                                            attr: {href: short_odk_url()},
+                                            text: short_odk_url()
+                                        "></a>
+                                    </span>
+                                    <span class="text-warning" data-bind="visible: !short_odk_url()">
+                                        {% trans "No short code available; try making another build." %}
+                                    </span>
+                                </p>
+                                <p>
+                                    {% trans "Or" %}
+                                    <a href="#" data-bind="openJqm: $root.url('odk', id)">
+                                    {% trans "scan the bar code" %}
+                                    </a>
+                                </p>
+                            </div>
                         </div>
                     </div>
 
@@ -330,10 +354,10 @@
                                     <div class="tabbable">
                                         <ul class="nav nav-pills">
                                             <li class="active">
-                                                <a>{% trans "Send J2ME app" %}</a>
+                                                <a>{% trans "Send Java Phone app" %}</a>
                                             </li>
                                             <li>
-                                                <a>{% trans "Send CommCare ODK app (Android)" %}</a>
+                                                <a>{% trans "Send Android app" %}</a>
                                             </li>
                                         </ul>
                                         <div class="tab-content" data-bind="foreach: [short_url(), short_odk_url()]">
@@ -364,24 +388,11 @@
                     {% if multimedia %}
                         <div class="accordion-group">
                             <div class="accordion-heading">
-                                <a class="accordion-toggle" href="{% if multimedia.notice %}#{{ saved_app.id }}_multimedia{% else %}{% url download_multimedia_zip domain app.id %}{% endif %}" {% if multimedia.notice %}data-toggle="collapse" data-target="#{{ saved_app.id }}_multimedia"{% endif %}>Download Multimedia Zip</a>
+                                <a class="accordion-toggle" href="#{{ saved_app.id }}_multimedia" data-toggle="collapse" data-target="#{{ saved_app.id }}_multimedia">{% trans 'Download Multimedia' %}</a>
                             </div>
                             <div class="accordion-body collapse" id="{{ saved_app.id }}_multimedia">
                                 <div class="accordion-inner">
-                                    {% if multimedia.missing_image_refs > 0 or multimedia.missing_audio_refs > 0 %}
-                                        <p>
-                                            Your multimedia zip is missing {{ multimedia.missing_image_refs }} image reference{{ multimedia.missing_image_refs|pluralize }} and
-                                            {{ multimedia.missing_audio_refs }} audio reference{{ multimedia.missing_audio_refs|pluralize }}. Your app will likely crash unless this
-                                            is resolved.
-                                        </p>
-                                    {% endif %}
-                                    {% if multimedia.errors %}
-                                        <p>
-                                            Your application contains errors, therefore, your multimedia could not properly be assembled. Please fix your errors and any missing
-                                            multimedia references that are found afterward before using this file.
-                                        </p>
-                                    {% endif %}
-                                    <a class="btn btn-warning" href="{% url download_multimedia_zip domain app.id %}">Download Anyway</a>
+                                    {% include 'hqmedia/partials/multimedia_zip_notice.html' %}
                                 </div>
                             </div>
                         </div>

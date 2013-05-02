@@ -1,6 +1,7 @@
 from collections import defaultdict
 import json
 import logging
+from django.conf import settings
 from django.http import Http404
 from corehq.apps.reports.standard import ProjectReportParametersMixin, ProjectReport, DatespanMixin
 from corehq.apps.reports.models import FormExportSchema,\
@@ -238,19 +239,21 @@ class CaseExportReport(ExportReport):
         )
         return context
 
+
 class DeidExportReport(FormExportReportBase):
     slug = 'deid_export'
     name = "De-Identified Export"
     report_template_path = 'reports/reportdata/form_deid_export.html'
 
     @classmethod
-    def show_in_navigation(cls, request, domain=None):
+    def show_in_navigation(cls, domain=None, project=None, user=None):
         startkey = json.dumps([domain, ""])[:-3]
         return SavedExportSchema.view("couchexport/saved_export_schemas",
             startkey=startkey,
             limit=1,
-            include_docs=False
-        ).all() > 0
+            include_docs=False,
+            stale=settings.COUCH_STALE_QUERY,
+        ).count() > 0
 
 
     def get_saved_exports(self):

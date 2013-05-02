@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.urlresolvers import reverse
 from corehq.apps.announcements.dispatcher import HQAnnouncementAdminInterfaceDispatcher
 from corehq.apps.announcements.forms import HQAnnouncementForm, ReportAnnouncementForm
@@ -7,7 +8,7 @@ from corehq.apps.reports.datatables import DataTablesHeader, DataTablesColumn
 
 class BaseHQAnnouncementsAdminInterface(BaseCRUDAdminInterface):
     section_name = "HQ Announcements"
-    app_slug = 'announcements'
+    base_template = 'reports/base_template.html'
     dispatcher = HQAnnouncementAdminInterfaceDispatcher
 
     crud_form_update_url = "/announcements/form/"
@@ -27,6 +28,7 @@ class BaseHQAnnouncementsAdminInterface(BaseCRUDAdminInterface):
             DataTablesColumn("Summary"),
             DataTablesColumn("Date Created"),
             DataTablesColumn("Valid Until"),
+            DataTablesColumn("Show to new users?"),
             DataTablesColumn("Edit"),
         )
 
@@ -44,7 +46,8 @@ class BaseHQAnnouncementsAdminInterface(BaseCRUDAdminInterface):
             reduce=False,
             include_docs=True,
             startkey=key,
-            endkey=key+[{}]
+            endkey=key + [{}],
+            stale=settings.COUCH_STALE_QUERY,
         ).all()
         return data
 
