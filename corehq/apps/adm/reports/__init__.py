@@ -1,0 +1,164 @@
+import logging
+from django.core.urlresolvers import reverse
+from django.utils.safestring import mark_safe
+from corehq.apps.adm import utils
+from corehq.apps.adm.dispatcher import ADMSectionDispatcher
+from corehq.apps.adm.models import REPORT_SECTION_OPTIONS, ADMReport
+from corehq.apps.reports.datatables import DataTablesHeader, DataTablesColumn
+from corehq.apps.reports.generic import GenericReportView, GenericTabularReport
+from corehq.apps.reports.standard import DatespanMixin, ProjectReportParametersMixin
+from dimagi.utils.couch.database import get_db
+from dimagi.utils.decorators.memoized import memoized
+
+class ADMSectionView(GenericReportView):
+    section_name = "Active Data Management"
+    app_slug = "adm"
+    dispatcher = ADMSectionDispatcher
+    hide_filters = True
+
+    # adm-specific stuff
+    adm_slug = None
+    
+    def __init__(self, request, base_context=None, *args, **kwargs):
+        self.adm_sections = dict(REPORT_SECTION_OPTIONS)
+        if self.adm_slug not in self.adm_sections:
+            raise ValueError("The adm_slug provided, %s, is not in the list of valid ADM report section slugs: %s." %
+                             (self.adm_slug, ", ".join([key for key, val in self.adm_sections.items()]))
+            )
+        self.subreport_slug = kwargs.get("subreport_slug")
+
+        super(ADMSectionView, self).__init__(request, base_context, *args, **kwargs)
+        self.context['report'].update(sub_slug=self.subreport_slug)
+        if self.subreport_data:
+            self.name = mark_safe("""%s <small>%s</small>""" %\
+                        (self.subreport_data.get('value', {}).get('name'),
+                         self.adm_sections.get(self.adm_slug, "ADM Report")))
+
+    @property
+    def subreport_data(self):
+        raise NotImplementedError
+
+    @property
+    def show_subsection_navigation(self):
+        return utils.show_adm_nav(self.domain, self.request)
+
+    @property
+    def default_report_url(self):
+        return reverse('default_adm_report', args=[self.request.project])
+
+    @classmethod
+    def get_url(cls, *args, **kwargs):
+        subreport = kwargs.get('subreport')
+        url = super(ADMSectionView, cls).get_url(*args, **kwargs)
+        return "%s%s" % (url, "%s/" % subreport if subreport else "")
+
+
+class DefaultReportADMSectionView(GenericTabularReport, ADMSectionView, ProjectReportParametersMixin, DatespanMixin):
+    section_name = "Active Data Management"
+    app_slug = "adm"
+    dispatcher = ADMSectionDispatcher
+
+    fields = ['corehq.apps.reports.fields.FilterUsersField',
+              'corehq.apps.reports.fields.GroupField',
+              'corehq.apps.reports.fields.DatespanField']
+
+    hide_filters = False
+
+    # adm-specific stuff
+    adm_slug = None
+
+    @property
+    @memoized
+    def subreport_data(self):
+        default_subreport = ADMReport.get_default(self.subreport_slug, domain=self.domain,
+                section=self.adm_slug, wrap=False)
+        if default_subreport is None:
+            return dict()
+        return default_subreport
+
+    @property
+    @memoized
+    def adm_report(self):
+        if self.subreport_data:
+            try:
+                adm_report = ADMReport.get_correct_wrap(self.subreport_data.get('key')[-1])
+                adm_report.set_domain_specific_values(self.domain)
+                return adm_report
+            except Exception as e:
+                logging.error("Could not fetch ADM Report: %s" % e)
+        return None
+
+    @property
+    @memoized
+    def adm_columns(self):
+        if self.adm_report:
+            column_config = self.report_column_config
+            if not isinstance(column_config, dict):
+                ValueError('report_column_config should return a dict')
+            for col in self.adm_report.columns:
+                col.set_report_values(**column_config)
+            return self.adm_report.columns
+        return []
+
+    @property
+    def headers(self):
+        header = DataTablesHeader(DataTablesColumn("FLW Name"))
+        for col in self.adm_report.columns:
+            header.add_column(DataTablesColumn(col.name, help_text=col.description))
+        return header
+
+    @property
+    def rows(self):
+        rows = []
+        for user in self.users:
+            row = [self.table_cell(user.get("raw_username"),
+                user.get('username_in_report'))]
+            for col in self.adm_columns:
+                val = col.raw_value(**user)
+                row.append(self.table_cell(col.clean_value(val),
+                    col.html_value(val)))
+            rows.append(row)
+        return rows
+
+    @property
+    def report_column_config(self):
+        """
+            Should return a dict of values important for rendering the ADMColumns in this report.
+        """
+        return dict(
+            domain=self.domain,
+            datespan=self.datespan
+        )
+
+    @classmethod
+    def override_navigation_list(cls, context):
+        current_slug = context.get('report', {}).get('sub_slug')
+        domain = context.get('domain')
+
+        subreport_nav = list()
+        subreports = ADMReport.get_default_subreports(domain, cls.adm_slug)
+
+        if not subreports:
+            return ["""<li><span class="label">
+            <i class="icon-white icon-info-sign"></i> No ADM Reports Configured</span>
+            </li>"""]
+
+        for report in subreports:
+            key = report.get("key", [])
+            entry = report.get("value", {})
+            report_slug = key[-2]
+            if cls.show_subreport_in_navigation(report_slug):
+                subreport_nav.append("""<li%(active_class)s>
+                <a href="%(url)s" title="%(description)s">%(name)s</a>
+                </li>""" % dict(
+                    active_class=' class="active"' if current_slug == report_slug else "",
+                    url=cls.get_url(domain, subreport=report_slug),
+                    description=entry.get('description', ''),
+                    name=entry.get('name', 'Untitled Report')
+                ))
+        return subreport_nav
+
+    @classmethod
+    def show_subreport_in_navigation(cls, subreport_slug):
+        return True
+
