@@ -1,0 +1,93 @@
+{% extends base_template %}
+{% load i18n %}
+{% load hq_shared_tags %}
+{% block page_imports %}
+    {% include "imports/datatables.html" %}
+    {% include "imports/checklist.html" %}
+{% endblock %}
+{% block js-inline %}{{ block.super }}
+    <script>
+    $(function(){
+        $("#sms-tabs").tabs().removeClass('ui-corner-all ui-widget-content').addClass('ui-corner-bottom').css('padding', '0');
+        $("#sms-tabs ul").removeClass('ui-corner-all');
+    });
+
+    // datatable configuration.
+    function start_datatables(elem){
+        if(!elem){
+            elem = document;
+        }
+        $('.datatable', elem).dataTable({
+            "bJQueryUI": true,
+            "bRetrieve": true
+        });
+    }
+    $(document).ready(function() {
+        start_datatables();
+        $('.checklist').toChecklist({
+            addSearchBox : true,
+            showSelectedItems : true,
+        });
+        $("#sms-message").bind('keyup', function () {
+            var max_char = 160,
+                current_count = $(this).val().length,
+                cc_message = "";
+            var chars_remaining = max_char - current_count;
+            var $char_count = $("#character-count");
+            if(chars_remaining < 0)
+                $char_count.addClass("alert");
+            else
+                $char_count.removeClass("alert");
+            cc_message = current_count + " character";
+            if(current_count != 1)
+                cc_message = cc_message + "s";
+            cc_message = cc_message + " (" + max_char + " max)";
+            $char_count.text(cc_message);
+        });
+    });
+    </script>
+    {% include "sms/partials/sms_autocomplete.html" %}
+{% endblock %}
+{% block head %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'sms/css/sms.css' %}" />
+    <link rel="stylesheet" href="{% static 'hqwebapp/css/splits.css' %}" />
+    <style type="text/css">
+        #character-count {
+            color: #888888;
+            padding-bottom: .5em;
+        }
+        #character-count.alert {
+            color: #FF1111;
+        }
+    </style>
+{% endblock %}
+
+
+{% block content %}
+    <div id="main_container">
+
+        <form action="{% url corehq.apps.sms.views.send_to_recipients domain %}" method="post">
+            <div>
+
+
+                <div id="send_message" class="ui-widget ui-corner-all">
+                    <h2 id="header" class="ui-widget-header ui-corner-top">Message</h2>
+                    <div id="content" class="ui-widget-content">
+                        <label>Recipients:</label>
+                        <textarea name="recipients" rows="3" cols="100" class="sms-autocomplete"></textarea>
+                        <label>Message:</label>
+                        <textarea id="sms-message" name="message" cols="53" rows="3"></textarea><br/>
+                        <div id="character-count">0 characters (160 max)</div>
+                        <input name="send_sms_button" class="send ui-button ui-button-text-only" type="submit" value="Send Messages"/>
+                    </div>
+                </div>
+            </div>
+        </form>
+        <div>
+            {% include "hqwebapp/partials/time-notice.html" %}
+            {% include "sms/partials/messagelog.html" %}
+        </div>
+        <br style="clear: both;" />
+    </div>
+{% endblock %}
