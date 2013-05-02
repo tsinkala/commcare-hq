@@ -1,0 +1,38 @@
+{% extends base_template %}
+{% block head %}{{ block.super }}
+    {% include "imports/bootstrap.google-prettify.html" %}
+{% endblock %}
+{% block content %}
+    <table>
+        <tr>
+            <td>CommCare.jad</td>
+            <td>{% url download_jad app.domain app.id as url %}<a href="{{ url }}">{{ url }}</a></td>
+        </tr>
+        <tr>
+            <td>CommCare.jar</td>
+            <td>{% url download_jar app.domain app.id as url %}<a href="{{ url }}">{{ url }}</a></td>
+        </tr>
+        <tr>
+            <td>profile.xml</td>
+            <td>{% url download_profile app.domain app.id as url %}<a href="{{ url }}">{{ url }}</a></td>
+        </tr>
+    </table>
+    <p>Resource Files:</p>
+    <ul>
+        {% for path,source in files %}
+            <li>
+                (<a href="{{ path }}">link</a>)<a class="toggle-next" href="{{ path }}">{{ path }}</a>
+                <pre class="prettyprint linenums">{{ source|force_escape }}</pre>
+            </li>
+        {% endfor %}
+    </ul>
+    <script>
+        $(function(){
+            $('.toggle-next').click(function(e){
+                e.preventDefault();
+                $(this).next().slideToggle();
+            }).trigger('click');
+            prettyPrint();
+        });
+    </script>
+{% endblock %}

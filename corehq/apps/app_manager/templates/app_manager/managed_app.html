@@ -1,0 +1,22 @@
+{% extends "app_manager/apps_base.html" %}
+{% load xforms_extras %}
+{% load url_extras %}
+{% load hq_shared_tags %}
+{% block js-inline %}{{ block.super }}
+    {% if app.get_doc_type == "Application" %}
+    <script>
+        $(function () {
+            var show_user_registration = {{ app.show_user_registration|JSON }};
+            if (!show_user_registration) {
+                $('#user-registration-nav-link').hide();
+            }
+        });
+    </script>
+    {% endif %}
+{% endblock %}
+{% block app-content %}
+    {% block form-view %}
+
+    {% endblock %}
+
+{% endblock %}

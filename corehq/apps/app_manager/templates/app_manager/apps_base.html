@@ -1,0 +1,277 @@
+{% extends "hqwebapp/two_column.html" %}
+{% load xforms_extras %}
+{% load url_extras %}
+{% load hq_shared_tags %}
+{% load timezone_tags %}
+{% load i18n %}
+
+{% block oldstyle_imports %}
+    <link rel="stylesheet" href="{% static 'hqwebapp/javascripts/jquery-ui/jquery-ui-redmond-1.8.16.css' %}"/>
+    <link rel="stylesheet" href="{% static 'hq_bootstrap/css/old/core.css' %}"/>
+    {% include "imports/hq-oldstyle-js.html" %}
+{% endblock %}
+
+{% block head %}{{ block.super }}
+    <link rel="stylesheet" href="{% static 'hq_bootstrap/css/old/core.css' %}"/>
+    <link rel="stylesheet" href="{% static 'hq_bootstrap/css/old/app_manager.css' %}"/>
+    {% include "imports/jqmodal.html" %}
+    <link href="{% static 'formdesigner/css/chosen.css' %}" rel="stylesheet" />
+    <style>
+        .hq-oldstyle .nav-pills .active > a {
+            color: white;
+            background-color: #1557A2;
+        }
+        #release-manager-nav {
+        }
+    </style>
+{% endblock %}
+
+{% block js %}{{ block.super }}
+    <script src="{% static 'hqwebapp/js/ui-element.js' %}"></script>
+    <script src="{% static 'langcodes/js/langcodes.js' %}"></script>
+    <script src="{% static 'hqwebapp/js/dropdown.js' %}"></script>
+{#    <script src="{% static 'hqwebapp/js/main.js' %}"></script>#}
+    <script src="{% static 'app_manager/js/app_manager.js' %}"></script>
+    <script src="{% static 'hqwebapp/javascripts/jquery.textchange.min.js' %}"></script>
+    <script src="{% static 'formdesigner/js/chosen.jquery.min.js' %}"></script>
+{% endblock %}
+
+{% block js-inline %}{{ block.super }}
+    {# Put here to avoid the .hq-oldstyle styling. (js-inline gets dumped into the end of body) #}
+    {% if app.is_deleted %}
+    <div id="deleted-app-dialog" class="modal hide fade">
+        <div class="modal-header"><h1>Oops! This application was deleted.</h1></div>
+        <div class="modal-body">
+            <p>If you want your application back, click Restore.</p>
+        </div>
+        <div class="modal-footer">
+            <a href="{% url undo_delete_app domain app.id %}" class="post-link btn btn-primary">Restore</a>
+            <a href="#" class="btn" data-dismiss="modal">No thanks, get me out of here</a>
+        </div>
+    </div>
+    {% endif %}
+    <script>
+    $(function () {
+        $('#deleted-app-dialog').modal({
+            backdrop: 'static',
+            keyboard: false,
+            show: true
+        }).on('hide', function () {
+            window.location = "{% url corehq.apps.app_manager.views.default domain %}";
+        });
+    });
+    $(function() {
+        $('#odk-install-placeholder').jqm({ajax: '@href', trigger: 'a.odk_install', 
+                                   ajaxText: "Please wait while we load that for you..." });
+    });
+    $(function () {
+        COMMCAREHQ.app_manager.init({
+            lastAppVersion: {{ latest_app_version }},
+            appVersion: {% if app.version %}{{ app.version }}{% else %}-1{% endif %},
+            edit: {{ edit|JSON }},
+            commcareVersion: {{ app.commcare_minor_release|JSON }}
+        });
+    });
+    $(function () {
+        $('.btn-langcode-preprocessed').each( function () {
+            langcodeTag.button_tag($(this), $(this).text());
+            if ($(this).hasClass('langcode-input')) {
+                var $langcodeInput = $(this).parent().find("input");
+                var that = this;
+                if ($langcodeInput) {
+                    $langcodeInput.change(function () {
+                        if ($(this).val() == "")
+                            $(that).show();
+                        else
+                            $(that).hide();
+                    });
+                }
+            }
+        });
+    });
+
+
+    </script>
+{% endblock %}
+
+{% block sidebar %}
+    <nav>
+        <ul class="nav nav-list">
+            <li class="nav-header">Applications</li>
+            {% if not app %}
+                <li><h6>No Application Selected</h6></li>
+            {% endif %}
+            {% for a in applications %}
+                <li {% ifequal a.id app.id %}class="active"{% endifequal %}>
+                    <a href="{% url corehq.apps.app_manager.views.view_app domain a.id %}"
+                       {% ifequal a.id app.id %}class="variable-app_name"{% endifequal %}>
+                        {{ a.name }}
+                        {% if a.get_doc_type == "RemoteApp" %}<span class="label label-info">remote</span>{% endif %}
+                        {% if a.application_version == '2.0' %}<span class="label label-info">2.x</span>{% endif %}
+                    </a>
+                    {% ifequal a.id app.id %}
+                    <div id="modules" class="hq-oldstyle">
+                        {% if app.get_doc_type == "Application" %}
+                            <ul {% if edit %}class="app-nav well sortable"{% endif %}>
+                                {% if edit %}
+                                    <li class="sort-action">
+                                        <form method="post"
+                                              action="{% url corehq.apps.app_manager.views.rearrange domain app.id 'modules' %}">
+                                        </form>
+                                    </li>
+                                {% endif %}
+                                <li class="sort-disabled{% if is_user_registration %} selected{% endif %}" id="user-registration-nav-link">
+                                    <a href="{% url view_user_registration domain app.id %}?edit={{ edit|BOOL }}">User Registration</a>
+                                </li>
+                                {% with module as selected_module %}
+                                    {% for module in app.get_modules %}
+                                        <li class="module">
+                                            {% if edit %}
+                                                <div class="index">{{ module.id }}</div>{% endif %}
+                                            <div {% ifequal module.id selected_module.id %}{% if not form %}
+                                                class="selected"{% endif %}{% endifequal %}><!--[M]-->
+                                                {% if edit %}
+                                                    <span class="drag_handle"></span>
+                                                {% endif %}
+                                                <a href="{% url view_module domain app.id module.id %}?edit={{ edit|BOOL }}"
+                                                   {% if module.id == selected_module.id %}class="variable-module_name"{% endif %}>
+                                                    {{ module.name|html_trans:langs|safe }}
+                                                </a>
+                                            </div>
+                                            <ul class="{% ifequal module.id selected_module.id %}selected{% endifequal %} {% if edit %}sortable{% endif %}">
+                                                {% if edit %}
+                                                    <li class="sort-action">
+                                                        <form method="post"
+                                                              action="{% url corehq.apps.app_manager.views.rearrange domain app.id 'forms' %}">
+                                                            <input type="hidden" name="module_id" value="{{ module.id }}"/>
+                                                        </form>
+                                                    </li>
+                                                {% endif %}
+                                                {% with nav_form as selected_form %}
+                                                    {% for form in module.get_forms %}
+                                                        <li {% ifequal form selected_form %} class="selected"{% endifequal %}>
+                                                            <!--[F]-->
+                                                            {% if edit %}
+                                                                <div class="index">{{ form.id }}</div>{% endif %}
+                                                            {% if edit %}
+                                                                <span class="drag_handle"></span>
+                                                            {% endif %}
+                                                            <a href="{% url view_form domain app.id module.id form.id %}?edit={{ edit|BOOL }}"
+                                                               {% if form == selected_form %}class="variable-form_name"{% endif %}>
+                                                                {{ form.name|html_trans:langs|safe }}
+                                                            </a>
+                                                        </li>
+                                                    {% endfor %}
+                                                {% endwith %}
+                                                {% if not module.forms and not edit %}
+                                                    <li><p class="warning">No Forms</p></li>
+                                                {% endif %}
+                                                {% if edit %}
+                                                    <li class="sort-disabled">
+                                                        <form action="{% url corehq.apps.app_manager.views.new_form domain app.id module.id %}?edit={{ edit|BOOL }}"
+                                                              method="post">
+                                                            <a class="new_link submit_on_click" id="new_form" href="#">Form</a>
+                                                        </form>
+                                                    </li>
+                                                {% endif %}
+
+                                            </ul>
+                                        </li>
+                                    {% endfor %}
+                                {% endwith %}
+                                {% if edit and app.get_doc_type == "Application" %}
+                                    <li class="sort-disabled">
+                                        <form action="{% url corehq.apps.app_manager.views.new_module domain app.id %}"
+                                              method="post">
+                                            <a href="#" class="new_link submit_on_click" id="new_module">Module</a>
+                                        </form>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        {% endif %}
+                    </div>
+                    {% endifequal %}
+                </li>
+            {% endfor %}
+            {% if request.couch_user.can_edit_apps %}
+                <li class="nav-header">New Application</li>
+                <li class="form" data-action="{% url corehq.apps.app_manager.views.new_app domain %}" data-method="post">
+                    <input type="hidden" name="type" value="Application" />
+                    <input type="hidden" name="application_version" value="1.0" />
+                    <a href="#" class="submit">{% trans 'Blank Application' %}</a>
+                </li>
+                <li class="form" data-action="{% url corehq.apps.app_manager.views.import_app domain %}" data-method="post">
+                    <input type="hidden" name="app_id" value="example--hello-world"/>
+                    <a href="#" class="submit">{% trans 'From Example: Hello World' %}</a>
+                </li>
+                <li class="form" data-action="{% url corehq.apps.app_manager.views.new_app domain %}" data-method="post">
+                    <input type="hidden" name="type" value="Application" />
+                    <input type="hidden" name="application_version" value="2.0" />
+                    <a href="#" class="submit">{% trans 'Blank 2.x Application (Advanced Users Only)' %}</a>
+                </li>
+                <li class="form" data-action="{% url corehq.apps.app_manager.views.new_app domain %}" data-method="post">
+                    <input type="hidden" name="type" value="RemoteApp" />
+                    <a href="#" class="submit">{% trans 'Remote App (Advanced Users Only)' %}</a>
+                </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endblock %}
+    {% block main_column %}
+        <div class="hq-oldstyle">
+            {% if app %}
+                {% if error %}
+                    <div id="error">
+                        {% ifequal error 'app_exists' %}
+                            {# trans #} Oops! We can't create that application; you already have one with the same name.
+                        {% endifequal %}
+                    </div>
+                {% endif %}
+                <div style="float: right">
+                    {% if applications and request.couch_user.can_edit_apps %}
+                        <div>
+                            Switch to:
+                            {% if edit %}
+                                <a href="{% urlencode request.path request.GET with "edit" as "false" %}">
+                                    Read Only
+                                </a>
+                            {% else %}
+                                <a href="{% urlencode request.path request.GET with "edit" as "true" %}">
+                                    Edit
+                                </a>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                    {% if not app.is_remote_app %}
+                        Language:
+                        <select class="code" name="lang">
+                            {% for lang in app.langs %}
+                                <option value="{% urlencode request.path request.GET with "lang" as lang %}"
+                                        {% if lang == langs.0 %}selected=""{% endif %}>
+                                    {{ lang }} {% if lang == app.langs.0 %}(default){% endif %}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    {% endif %}
+                </div>
+                {% include 'app_manager/partials/release-manager-nav.html' %}
+                <div>
+                    {% block app-content %}
+                    {% endblock %}
+                </div>
+            {% else %}
+                <div style="padding: 1em; text-align: center">
+                    <p style="font-size: 1.5em">
+                        Welcome to the CommCare Application Builder.
+                    </p>
+                    <form action="{% url new_app domain %}">
+                        <input type="hidden" name="type" value="Application">
+                        <a href="#" class="submit">Click here to create your first app.</a>
+                    </form>
+                </div>
+            {% endif %}
+        </div>
+        <div class="jqmWindow" id="odk-install-placeholder">
+            Please wait while that loads...
+        </div>
+    {% endblock %}
