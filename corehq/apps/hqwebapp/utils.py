@@ -1,3 +1,4 @@
+from couchdbkit.exceptions import ResourceNotFound
 from django.contrib import messages
 from django.contrib.auth.views import redirect_to_login
 from django.core.urlresolvers import reverse
@@ -22,12 +23,19 @@ class InvitationView():
     def validate_invitation(self, invitation):
         pass
 
+    def is_invited(self, invitation, couch_user):
+        raise NotImplementedError
+
     @property
     def success_msg(self):
         return _("You have been successfully invited")
 
     @property
     def redirect_to_on_success(self):
+        raise NotImplementedError
+
+    @property
+    def inviting_entity(self):
         raise NotImplementedError
 
     def invite(self, invitation, user):
@@ -53,8 +61,12 @@ class InvitationView():
             logout(request)
             return HttpResponseRedirect(request.path)
 
-        invitation = self.inv_type.get(invitation_id)
-
+        try:
+            invitation = self.inv_type.get(invitation_id)
+        except ResourceNotFound:
+            messages.error(request, _("Sorry, we couldn't find that invitation. Please double check "
+                                      "the invitation link you received and try again."))
+            return HttpResponseRedirect(reverse("login"))
         if invitation.is_accepted:
             messages.error(request, _("Sorry, that invitation has already been used up. "
                                       "If you feel this is a mistake please ask the inviter for "
@@ -65,19 +77,19 @@ class InvitationView():
 
         if request.user.is_authenticated():
             is_invited_user = request.couch_user.username == invitation.email
-            if request.couch_user.is_member_of(invitation.domain):
+            if self.is_invited(invitation, request.couch_user) and not request.couch_user.is_superuser:
                 if is_invited_user:
                     # if this invite was actually for this user, just mark it accepted
-                    messages.info(request, _("You are already a member of {domain}.").format(
-                        domain=invitation.domain))
+                    messages.info(request, _("You are already a member of {entity}.").format(
+                        entity=self.inviting_entity))
                     invitation.is_accepted = True
                     invitation.save()
                 else:
                     messages.error(request, _("It looks like you are trying to accept an invitation for "
-                                             "{invited} but you are already a member of {domain} with the "
+                                             "{invited} but you are already a member of {entity} with the "
                                              "account {current}. Please sign out to accept this invitation "
                                              "as another user.").format(
-                                                 domain=invitation.domain,
+                                                 entity=self.inviting_entity,
                                                  invited=invitation.email,
                                                  current=request.couch_user.username,
                                              ))
